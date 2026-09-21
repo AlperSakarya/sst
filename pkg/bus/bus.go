@@ -62,6 +62,11 @@ func newSubscriber(label string, lossy bool) *subscriber {
 	}
 }
 
+// recv narrows the channel so it compares equal to a Subscribe handle.
+func (s *subscriber) recv() <-chan interface{} {
+	return s.ch
+}
+
 // deliver reports whether the event was accepted. It must never block.
 func (s *subscriber) deliver(event interface{}) bool {
 	select {
@@ -104,18 +109,22 @@ func SubscribeAll() chan interface{} {
 // Unsubscribe removes ch from the bus. It holds the write lock, so it cannot
 // overlap a Publish; once it returns no publisher holds a reference to ch and
 // the caller may safely close it.
-func Unsubscribe(ch chan interface{}) {
+//
+// It takes a receive-only channel so that a Subscribe handle can be passed
+// back. A bidirectional channel from SubscribeAll converts implicitly, so
+// existing callers are unaffected.
+func Unsubscribe(ch <-chan interface{}) {
 	bus.mu.Lock()
 	defer bus.mu.Unlock()
 
 	for i := len(bus.all) - 1; i >= 0; i-- {
-		if bus.all[i].ch == ch {
+		if bus.all[i].recv() == ch {
 			bus.all = append(bus.all[:i], bus.all[i+1:]...)
 		}
 	}
 	for t, subs := range bus.subscribers {
 		for i := len(subs) - 1; i >= 0; i-- {
-			if subs[i].ch == ch {
+			if subs[i].recv() == ch {
 				subs = append(subs[:i], subs[i+1:]...)
 			}
 		}

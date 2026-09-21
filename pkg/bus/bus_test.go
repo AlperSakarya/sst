@@ -17,6 +17,7 @@ type testEventD struct{ Value int }
 type testEventE struct{ Value string }
 type testEventF struct{ Value int }
 type testEventG struct{ Value int }
+type testEventH struct{ Value string }
 
 func TestBus(t *testing.T) {
 	t.Run("subscribe and publish", func(t *testing.T) {
@@ -244,5 +245,32 @@ func TestFullTypedSubscriberDoesNotFreezeBus(t *testing.T) {
 	case <-subscribed:
 	case <-time.After(10 * time.Second):
 		t.Fatal("Subscribe blocked while a typed subscriber was full")
+	}
+}
+
+// A Subscribe handle can now be handed back to Unsubscribe, which is what makes
+// the typed removal path reachable from outside the package at all.
+func TestUnsubscribeTypedSubscriber(t *testing.T) {
+	ch := bus.Subscribe(testEventH{})
+
+	bus.Publish(testEventH{Value: "before"})
+	select {
+	case evt := <-ch:
+		require.Equal(t, testEventH{Value: "before"}, evt)
+	case <-time.After(5 * time.Second):
+		t.Fatal("subscriber received nothing before unsubscribe")
+	}
+
+	bus.Unsubscribe(ch)
+	bus.Publish(testEventH{Value: "after"})
+
+	select {
+	case evt := <-ch:
+		t.Fatalf("received %v after unsubscribe", evt)
+	case <-time.After(100 * time.Millisecond):
+	}
+
+	for _, stat := range bus.Stats() {
+		assert.NotEqual(t, "bus_test.testEventH", stat.Label, "subscriber still registered")
 	}
 }
