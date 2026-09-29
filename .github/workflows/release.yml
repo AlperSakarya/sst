@@ -85,6 +85,6 @@ jobs:
           cd sdk/js
           bun run release
         # npm trusted publishing (OIDC via id-token: write), no token. Each
-        # package's trusted publisher is set up once with scripts/npm-trust.
+        # package needs a trusted publisher for this workflow on npmjs.com.
         env:
           NPM_CONFIG_PROVENANCE: true
