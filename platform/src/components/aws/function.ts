@@ -2557,7 +2557,15 @@ export class Function extends Component implements Link.Linkable {
                 source: new asset.FileArchive(zipPath),
               },
               dev
-                ? { parent: rootStackResource, provider: opts?.provider }
+                ? {
+                    parent: rootStackResource,
+                    provider: opts?.provider,
+                    // The dev bridge key is shared by every app and stage in this
+                    // account and region. Retain it so removing a stage, deploying it
+                    // outside dev, or changing its bridge version doesn't delete the
+                    // object other stages' Lambdas are still created from.
+                    retainOnDelete: true,
+                  }
                 : { parent },
             );
           }
