@@ -9,7 +9,7 @@ Build full-stack apps on your own infrastructure.
 > [!NOTE]
 > **sst-community** is a community-maintained fork of [SST](https://github.com/anomalyco/sst). It is not affiliated with SST or Anomaly. It tracks upstream releases and carries fixes that haven't landed upstream yet.
 >
-> Releases are numbered after the upstream line they're based on: `4.17.x` is based on upstream 4.17. Each release's notes list what it changes. Telemetry is off. The [SST docs](https://sst.dev/docs/) apply to the fork, except for installing it.
+> Releases are numbered after the upstream line they're based on: `4.17.x` is based on upstream 4.17. Each release's notes list what it changes. Telemetry is off. Docs: [sst-community.github.io/sst](https://sst-community.github.io/sst/docs/).
 
 ## Installation
 
@@ -44,19 +44,19 @@ Download the pre-compiled binaries from the [releases](https://github.com/sst-co
 
 Get started with your favorite framework:
 
-- [Next.js](https://sst.dev/docs/start/aws/nextjs)
-- [Remix](https://sst.dev/docs/start/aws/remix)
-- [Astro](https://sst.dev/docs/start/aws/astro)
-- [API](https://sst.dev/docs/start/aws/api)
+- [Next.js](https://sst-community.github.io/sst/docs/start/aws/nextjs)
+- [Remix](https://sst-community.github.io/sst/docs/start/aws/remix)
+- [Astro](https://sst-community.github.io/sst/docs/start/aws/astro)
+- [Hono](https://sst-community.github.io/sst/docs/start/aws/hono)
 
 ## Learn More
 
 Learn more about some of the key concepts:
 
-- [Live](https://sst.dev/docs/live)
-- [Linking](https://sst.dev/docs/linking)
-- [Console](https://sst.dev/docs/console)
-- [Components](https://sst.dev/docs/components)
+- [Live](https://sst-community.github.io/sst/docs/live)
+- [Linking](https://sst-community.github.io/sst/docs/linking)
+- [Console](https://sst-community.github.io/sst/docs/console)
+- [Components](https://sst-community.github.io/sst/docs/components)
 
 ## Contributing
 
