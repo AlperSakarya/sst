@@ -8,6 +8,9 @@ import metafile from "../../../dist/metadata.json";
 import artifacts from "../../../dist/artifacts.json";
 import pkg from "../package.json";
 const nextPkg = JSON.parse(JSON.stringify(pkg));
+// Publish under the fork's npm name (pkg/global/distribution.go). The workspace
+// package stays "sst" so bun.lockb matches upstream's.
+nextPkg.name = "@sst-community/sst";
 nextPkg.version = metafile.version;
 nextPkg.optionalDependencies = nextPkg.optionalDependencies || {};
 const snapshot = nextPkg.version.includes("0.0.0");
@@ -34,7 +37,7 @@ for (const artifact of artifacts) {
   const cpu = cpus[artifact.goarch as keyof typeof cpus];
   if (!os || !cpu)
     throw new Error(`Invalid artifact: ${JSON.stringify(artifact)}`);
-  const name = `${pkg.name}-${os}-${cpu}`;
+  const name = `${nextPkg.name}-${os}-${cpu}`;
   const dir = path.join(tmp, name);
   const binary = path.basename(artifact.path);
   await fs.mkdir(path.join(dir, "bin"), { recursive: true });
