@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"maps"
 	"net/http"
 	"net/url"
 	"os"
@@ -88,6 +89,11 @@ type Connection struct {
 	realtimeEndpoint string
 	subscriptions    map[string]SubscriptionInfo
 	lock             sync.Mutex
+	ctx              context.Context
+	reconnectLock    sync.Mutex
+	// subscriptionsLock guards subscriptions, which the reader goroutine reads
+	// while subscribe swaps entries. Never hold it while sending on Out.
+	subscriptionsLock sync.Mutex
 }
 
 type SubscriptionInfo struct {
@@ -109,6 +115,7 @@ func Dial(
 	realtimeEndpoint string,
 ) (*Connection, error) {
 	result := &Connection{
+		ctx:              ctx,
 		cfg:              cfg,
 		httpEndpoint:     httpEndpoint,
 		realtimeEndpoint: realtimeEndpoint,
@@ -125,6 +132,8 @@ func Dial(
 		if result.conn != nil {
 			result.conn.Close()
 		}
+		result.subscriptionsLock.Lock()
+		defer result.subscriptionsLock.Unlock()
 		for _, item := range result.subscriptions {
 			close(item.Out)
 		}
@@ -186,29 +195,7 @@ func (c *Connection) connect(ctx context.Context) error {
 			return
 		case <-timer.C:
 			log.Info("connection timeout")
-			conn.Close()
-			for {
-				select {
-				case <-ctx.Done():
-					return
-				default:
-					err := c.connect(ctx)
-					if err != nil {
-						log.Info("failed to reconnect", "err", err)
-						time.Sleep(time.Second * 5)
-						continue
-					}
-					for id, sub := range c.subscriptions {
-						log.Info("resubscribing", "channel", sub.Channel, "id", id)
-						err := c.subscribe(ctx, sub.Channel, id)
-						if err != nil {
-							log.Error("failed to resubscribe", "err", err)
-							continue
-						}
-					}
-					return
-				}
-			}
+			c.reconnect(ctx, conn)
 		}
 	}()
 
@@ -235,13 +222,13 @@ func (c *Connection) connect(ctx context.Context) error {
 
 			if msg["type"] == "subscribe_success" {
 				id := msg["id"].(string)
-				if item, ok := c.subscriptions[id]; ok {
+				if item, ok := c.subscription(id); ok {
 					item.Out <- "ok"
 				}
 			}
 			if t := msg["type"]; t == "data" {
 				id := msg["id"].(string)
-				if item, ok := c.subscriptions[id]; ok {
+				if item, ok := c.subscription(id); ok {
 					item.Out <- msg["event"].(string)
 				}
 			}
@@ -251,18 +238,91 @@ func (c *Connection) connect(ctx context.Context) error {
 	return nil
 }
 
+// reconnect replaces stale with a new connection and resubscribes. It does
+// nothing if stale was already replaced, so a timeout and a Reconnect call
+// never both redial.
+func (c *Connection) reconnect(ctx context.Context, stale *websocket.Conn) {
+	c.reconnectLock.Lock()
+	defer c.reconnectLock.Unlock()
+	if c.conn != stale {
+		return
+	}
+	stale.Close()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		default:
+			err := c.connect(ctx)
+			if err != nil {
+				log.Info("failed to reconnect", "err", err)
+				time.Sleep(time.Second * 5)
+				continue
+			}
+			c.subscriptionsLock.Lock()
+			subscriptions := maps.Clone(c.subscriptions)
+			c.subscriptionsLock.Unlock()
+			for id, sub := range subscriptions {
+				log.Info("resubscribing", "channel", sub.Channel, "id", id)
+				err := c.subscribe(ctx, sub.Channel, id)
+				if err != nil {
+					log.Error("failed to resubscribe", "err", err)
+					continue
+				}
+			}
+			return
+		}
+	}
+}
+
+// Reconnect replaces the websocket and resubscribes, for when the connection
+// may have died without an error, such as after a Lambda freeze. It returns
+// once resubscribed or when ctx is done; the reconnect itself carries on.
+func (c *Connection) Reconnect(ctx context.Context) {
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		if !c.reconnectLock.TryLock() {
+			// A reconnect is already running. Wait for it rather than tearing
+			// down the connection it is about to hand back.
+			c.reconnectLock.Lock()
+			c.reconnectLock.Unlock()
+			return
+		}
+		stale := c.conn
+		c.reconnectLock.Unlock()
+		c.reconnect(c.ctx, stale)
+	}()
+	select {
+	case <-done:
+	case <-ctx.Done():
+	}
+}
+
 func (c *Connection) Subscribe(ctx context.Context, channel string) (chan string, error) {
 	out := make(chan string, 1000)
 	subscriptionID := id.Ascending()
-	c.subscriptions[subscriptionID] = SubscriptionInfo{
+	c.setSubscription(subscriptionID, SubscriptionInfo{
 		Channel: channel,
 		Out:     out,
-	}
+	})
+	// On error, out is still returned: the subscription stays registered and
+	// is retried on the next reconnect.
 	err := c.subscribe(ctx, channel, subscriptionID)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
+	return out, err
+}
+
+func (c *Connection) subscription(id string) (SubscriptionInfo, bool) {
+	c.subscriptionsLock.Lock()
+	defer c.subscriptionsLock.Unlock()
+	item, ok := c.subscriptions[id]
+	return item, ok
+}
+
+func (c *Connection) setSubscription(id string, item SubscriptionInfo) {
+	c.subscriptionsLock.Lock()
+	defer c.subscriptionsLock.Unlock()
+	c.subscriptions[id] = item
 }
 
 func (c *Connection) subscribe(ctx context.Context, channel string, subscriptionID string) error {
@@ -274,18 +334,19 @@ func (c *Connection) subscribe(ctx context.Context, channel string, subscription
 	if err != nil {
 		return err
 	}
-	old := c.subscriptions[subscriptionID].Out
+	current, _ := c.subscription(subscriptionID)
+	old := current.Out
 	tmp := make(chan string, 1)
 	defer func() {
-		c.subscriptions[subscriptionID] = SubscriptionInfo{
+		c.setSubscription(subscriptionID, SubscriptionInfo{
 			Channel: channel,
 			Out:     old,
-		}
+		})
 	}()
-	c.subscriptions[subscriptionID] = SubscriptionInfo{
+	c.setSubscription(subscriptionID, SubscriptionInfo{
 		Channel: channel,
 		Out:     tmp,
-	}
+	})
 	c.conn.WriteJSON(map[string]interface{}{
 		"type":          "subscribe",
 		"id":            subscriptionID,

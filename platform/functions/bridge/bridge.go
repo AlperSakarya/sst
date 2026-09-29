@@ -16,6 +16,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/sst/sst/v3/cmd/sst/mosaic/aws/appsync"
 	"github.com/sst/sst/v3/cmd/sst/mosaic/aws/bridge"
+	"github.com/sst/sst/v3/pkg/id"
 )
 
 var version = "0.0.1"
@@ -96,6 +97,7 @@ func run() error {
 		return err
 	}
 	client := bridge.NewClient(ctx, conn, workerID, prefix+"/"+workerID)
+	waitForSubscription(ctx, conn, client, prefix+"/"+workerID+"/in")
 
 	init := bridge.InitBody{
 		FunctionID:  SST_FUNCTION_ID,
@@ -117,6 +119,9 @@ func run() error {
 		"body":       "sst dev is not running (worker: " + workerID + ")",
 	})
 
+	// Wall clock, so time spent frozen between invocations always counts.
+	lastActive := time.Now().Round(0)
+	timedOut := false
 	for {
 		resp, err := http.Get("http://" + LAMBDA_RUNTIME_API + "/2018-06-01/runtime/invocation/next")
 		fmt.Println("status", resp.Status)
@@ -125,6 +130,10 @@ func run() error {
 			return err
 		}
 		requestID := resp.Header.Get("lambda-runtime-aws-request-id")
+		if timedOut || time.Since(lastActive) > 10*time.Second {
+			waitForSubscription(ctx, conn, client, prefix+"/"+workerID+"/in")
+			timedOut = false
+		}
 		writer := client.NewWriter(bridge.MessageNext, prefix+"/in")
 		err = resp.Write(writer)
 		if err != nil {
@@ -185,9 +194,49 @@ func run() error {
 			case <-time.After(timeout):
 				fmt.Println("timeout", requestID)
 				http.Post("http://"+LAMBDA_RUNTIME_API+"/2018-06-01/runtime/invocation/"+requestID+"/response", "application/json", bytes.NewReader(notRunning))
+				timedOut = true
 				break loop
 			}
 		}
+		lastActive = time.Now().Round(0)
 	}
 
+}
+
+// waitForSubscription publishes probes to the bridge's own channel until one
+// comes back, so the CLI is only asked for anything once its reply can arrive.
+// AppSync drops events that have no live subscriber, and after a Lambda freeze
+// the websocket can be dead without any error. A new subscription can also miss
+// events for a moment after subscribe_success.
+func waitForSubscription(ctx context.Context, conn *appsync.Connection, client *bridge.Client, channel string) {
+	sent := map[string]bool{}
+	for attempt := 1; attempt <= 15; attempt++ {
+		if attempt == 4 || attempt == 10 {
+			slog.Warn("subscription is not delivering, reconnecting")
+			reconnectCtx, cancelReconnect := context.WithTimeout(ctx, 5*time.Second)
+			conn.Reconnect(reconnectCtx)
+			cancelReconnect()
+			sent = map[string]bool{}
+		}
+		probeID := id.Ascending()
+		sent[probeID] = true
+		writer := client.NewWriter(bridge.MessageProbe, channel)
+		writer.SetID(probeID)
+		writer.Close()
+		wait := time.After(500 * time.Millisecond)
+	drain:
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case msg := <-client.Read():
+				if msg.Type == bridge.MessageProbe && sent[msg.ID] {
+					return
+				}
+			case <-wait:
+				break drain
+			}
+		}
+	}
+	slog.Error("subscription never delivered a probe, continuing anyway")
 }

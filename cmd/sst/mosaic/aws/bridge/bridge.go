@@ -34,6 +34,8 @@ const (
 
 	MessageTaskStart
 	MessageTaskComplete
+
+	MessageProbe
 )
 
 type Message struct {
