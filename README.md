@@ -1,8 +1,6 @@
-<p align="center">
-  <a href="https://sst.dev/">
-    <img alt="SST" src="https://raw.githubusercontent.com/sst/identity/main/variants/sst-full.svg" width="300" />
-  </a>
-</p>
+<h1 align="center">sst-community</h1>
+
+<p align="center">A community-maintained fork of <a href="https://github.com/anomalyco/sst">SST</a></p>
 
 ---
 
