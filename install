@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 APP=sst
+REPO=sst-community/sst
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -39,15 +40,15 @@ INSTALL_DIR=$HOME/.sst/bin
 mkdir -p "$INSTALL_DIR"
 
 if [ -z "$requested_version" ]; then
-    url="https://github.com/sst/sst/releases/latest/download/$filename"
-    specific_version=$(curl -s https://api.github.com/repos/sst/sst/releases/latest | awk -F'"' '/"tag_name": "/ {gsub(/^v/, "", $4); print $4}')
+    url="https://github.com/$REPO/releases/latest/download/$filename"
+    specific_version=$(curl -s https://api.github.com/repos/$REPO/releases/latest | awk -F'"' '/"tag_name": "/ {gsub(/^v/, "", $4); print $4}')
 
     if [[ $? -ne 0 ]]; then
         echo "${RED}Failed to fetch version information${NC}"
         exit 1
     fi
 else
-    url="https://github.com/sst/sst/releases/download/v${requested_version}/$filename"
+    url="https://github.com/$REPO/releases/download/v${requested_version}/$filename"
     specific_version=$requested_version
 fi
 
@@ -74,10 +75,11 @@ check_version() {
             exit 1
         fi
 
-        installed_version=$(sst version)
-        installed_version=$(echo $installed_version | awk '{print $2}')
+        installed=$(sst version)
+        installed_version=$(echo $installed | awk '{print $2}')
 
-        if [[ "$installed_version" != "$specific_version" ]]; then
+        # Upstream SST can have the same version number, so also require the fork's label.
+        if [[ "$installed_version" != "$specific_version" || "$installed" != *"(sst-community)"* ]]; then
             print_message info "Installed version: ${YELLOW}$installed_version."
         else
             print_message info "Version ${YELLOW}$specific_version${GREEN} already installed"

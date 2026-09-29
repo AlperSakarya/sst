@@ -14,6 +14,7 @@ import (
 	"text/template"
 
 	"github.com/sst/sst/v3/internal/util"
+	"github.com/sst/sst/v3/pkg/global"
 	"github.com/sst/sst/v3/pkg/npm"
 	"github.com/sst/sst/v3/platform"
 	"github.com/tailscale/hujson"
@@ -143,16 +144,24 @@ func Create(templateName string, home string) ([]string, error) {
 				packageJsons[npmStep.File] = packageJson
 			}
 
+			// Templates add "sst"; install this distribution under that name.
+			pkgName := npmStep.Package
+			if pkgName == "sst" {
+				pkgName = global.NPMPackage
+			}
 			version := npmStep.Version
 			if version == "" {
-				slog.Info("fetching latest version", "package", npmStep.Package)
+				slog.Info("fetching latest version", "package", pkgName)
 				registry := npm.LoadRegistry()
-				data, err := npm.Get(registry, npmStep.Package, "latest")
+				data, err := npm.Get(registry, pkgName, "latest")
 				if err != nil {
 					return nil, err
 				}
 				slog.Info("latest version", "version", data.Version)
 				version = data.Version
+			}
+			if pkgName != npmStep.Package {
+				version = global.NPMSpec(version)
 			}
 			target[npmStep.Package] = version
 

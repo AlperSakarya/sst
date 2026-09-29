@@ -1,17 +1,19 @@
 #!/usr/bin/env node
 import { createRequire } from "node:module";
 const require = createRequire(import.meta.url);
-import path from "path";
 import { execFileSync } from "child_process";
 
 let resolved = process.env.SST_BIN_PATH;
 
 if (!resolved) {
-  const name = `sst-${process.platform}-${process.arch}`;
+  // The binary packages are named after this package (see scripts/release.ts),
+  // which may be scoped, so read the name rather than assume "sst".
+  const { name: pkgName } = require("../package.json");
+  const name = `${pkgName}-${process.platform}-${process.arch}`;
   const binary = process.platform === "win32" ? "sst.exe" : "sst";
 
   try {
-    resolved = require.resolve(path.join(name, "bin", binary));
+    resolved = require.resolve(`${name}/bin/${binary}`);
   } catch (ex) {
     console.error(
       `It seems that your package manager failed to install the right version of the SST CLI for your platform. You can try manually installing the "${name}" package.`,
