@@ -4,15 +4,14 @@
   </a>
 </p>
 
-<p align="center">
-  <a href="https://sst.dev/discord"><img alt="Discord" src="https://img.shields.io/discord/983865673656705025?style=flat-square&label=Discord" /></a>
-  <a href="https://www.npmjs.com/package/sst"><img alt="npm" src="https://img.shields.io/npm/v/sst.svg?style=flat-square" /></a>
-  <a href="https://github.com/anomalyco/sst/actions/workflows/build.yml"><img alt="Build status" src="https://img.shields.io/github/actions/workflow/status/anomalyco/sst/build.yml?style=flat-square&branch=dev" /></a>
-</p>
-
 ---
 
 Build full-stack apps on your own infrastructure.
+
+> [!NOTE]
+> **sst-community** is a community-maintained fork of [SST](https://github.com/anomalyco/sst). It is not affiliated with SST or Anomaly. It tracks upstream releases and carries fixes that haven't landed upstream yet.
+>
+> The fork has no published release yet, so the install commands below install upstream SST. To use the fork today, build it from source (see [Running Locally](#running-locally)).
 
 ## Installation
 
@@ -86,4 +85,4 @@ For building the docs, run `bun run docs:generate` and `bun run docs:dev`.
 
 ---
 
-**Join our community** [Discord](https://sst.dev/discord) | [YouTube](https://www.youtube.com/c/sst-dev) | [X.com](https://x.com/SST_dev)
+**Found a bug or have a question about the fork?** [Open an issue](https://github.com/sst-community/sst/issues). For SST itself, see [anomalyco/sst](https://github.com/anomalyco/sst).
