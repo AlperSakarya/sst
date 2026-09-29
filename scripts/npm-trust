@@ -1,0 +1,58 @@
+#!/usr/bin/env bash
+# Sets up npm trusted publishing for the @sst-community packages, so
+# .github/workflows/release.yml can publish without an npm token.
+#
+# npm only lets you add a trusted publisher to a package that already exists,
+# so this first publishes an empty placeholder for any package that doesn't
+# (tagged "placeholder"), then points each package at release.yml.
+#
+# Run once from a terminal after `npm login`, with 2FA enabled on your npm
+# account. Re-run it if a new platform package is added; existing packages are
+# left as they are. DRY_RUN=1 shows what it would do without changing anything.
+set -euo pipefail
+
+REPO=sst-community/sst
+WORKFLOW=release.yml
+# The main package and one binary package per goreleaser target, named as
+# sdk/js/scripts/release.ts names them.
+PACKAGES=(
+  @sst-community/sst
+  @sst-community/sst-darwin-arm64
+  @sst-community/sst-darwin-x64
+  @sst-community/sst-linux-arm64
+  @sst-community/sst-linux-x64
+  @sst-community/sst-linux-x86
+  @sst-community/sst-win32-arm64
+  @sst-community/sst-win32-x64
+  @sst-community/sst-win32-x86
+)
+
+run() {
+  if [ -n "${DRY_RUN:-}" ]; then
+    echo "  would run: $*"
+  else
+    "$@"
+  fi
+}
+
+for pkg in "${PACKAGES[@]}"; do
+  echo "$pkg"
+  if npm view "$pkg" name >/dev/null 2>&1; then
+    echo "  already on npm"
+  else
+    dir=$(mktemp -d)
+    cat >"$dir/package.json" <<EOF
+{
+  "name": "$pkg",
+  "version": "0.0.0-placeholder.0",
+  "description": "Placeholder so npm trusted publishing can be configured. Install @sst-community/sst.",
+  "license": "MIT",
+  "repository": { "type": "git", "url": "git+https://github.com/$REPO.git" }
+}
+EOF
+    (cd "$dir" && run npm publish --access public --tag placeholder)
+    rm -rf "$dir"
+  fi
+  # `npm trust` needs npm 11.15 or later; npm 12 drops support for older Node 24 releases.
+  run npx --yes npm@^11.15.0 trust github "$pkg" --repo "$REPO" --file "$WORKFLOW" --allow-publish --yes
+done
