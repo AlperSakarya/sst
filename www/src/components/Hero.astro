@@ -1,7 +1,16 @@
 ---
 import Default from '@astrojs/starlight/components/Hero.astro';
+import ForkLanding from './ForkLanding.astro';
 
-// The sst-community home page uses Starlight's hero rather than SST's lander.
+// The sst-community home page renders its own landing section; any other page
+// with a hero uses Starlight's.
+const slug = Astro.url.pathname
+  .slice(import.meta.env.BASE_URL.replace(/\/$/, "").length)
+  .replace(/^\//, "")
+  .replace(/\/$/, "");
 ---
 
-<Default {...Astro.props}><slot /></Default>
+{ slug === ""
+    ? <ForkLanding />
+    : <Default {...Astro.props}><slot /></Default>
+}
