@@ -11,36 +11,36 @@ Build full-stack apps on your own infrastructure.
 > [!NOTE]
 > **sst-community** is a community-maintained fork of [SST](https://github.com/anomalyco/sst). It is not affiliated with SST or Anomaly. It tracks upstream releases and carries fixes that haven't landed upstream yet.
 >
-> The fork has no published release yet, so the install commands below install upstream SST. To use the fork today, build it from source (see [Running Locally](#running-locally)).
+> Releases are numbered after the upstream line they're based on: `4.17.x` is based on upstream 4.17. Each release's notes list what it changes. Telemetry is off. The [SST docs](https://sst.dev/docs/) apply to the fork, except for installing it.
 
 ## Installation
 
-For JavaScript projects, install SST locally so the CLI version is tracked with your app. You can then run the CLI with the same package manager.
+For JavaScript projects, install the fork locally under the name `sst`, so the CLI version is tracked with your app and `import ... from "sst"` keeps working. You can then run the CLI with the same package manager.
 
 ```bash
-npm install sst
-# pnpm add sst
-# bun add sst
-# yarn add sst
+npm install sst@npm:@sst-community/sst
+# pnpm add sst@npm:@sst-community/sst
+# bun add sst@npm:@sst-community/sst
+# yarn add sst@npm:@sst-community/sst
 ```
+
+To switch an existing project from SST, change its dependency to `"sst": "npm:@sst-community/sst@<version>"` and reinstall. `sst upgrade` keeps it pointing at the fork.
 
 If you are not using JavaScript, you can install the CLI globally.
 
 ```bash
-curl -fsSL https://sst.dev/install | bash
+curl -fsSL https://raw.githubusercontent.com/sst-community/sst/main/install | bash
 ```
 
 To install a specific version.
 
 ```bash
-curl -fsSL https://sst.dev/install | VERSION=0.0.403 bash
+curl -fsSL https://raw.githubusercontent.com/sst-community/sst/main/install | VERSION=4.17.2 bash
 ```
-
-To use a package manager, [check out our docs](https://sst.dev/docs/reference/cli/).
 
 #### Manually
 
-Download the pre-compiled binaries from the [releases](https://github.com/sst/sst/releases/latest) page and copy to the desired location.
+Download the pre-compiled binaries from the [releases](https://github.com/sst-community/sst/releases/latest) page and copy to the desired location. On Linux, the `.deb` and `.rpm` packages there install with `sudo dpkg -i` and `sudo rpm -i`.
 
 ## Get Started
 
