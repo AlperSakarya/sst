@@ -898,6 +898,10 @@ var root = &cli.Command{
 				Long: strings.Join([]string{
 					"Manage telemetry settings.",
 					"",
+					":::note",
+					"sst-community builds don't collect telemetry, and it can't be turned on.",
+					":::",
+					"",
 					"SST collects completely anonymous telemetry data about general usage. We track:",
 					"- Version of SST in use",
 					"- Command invoked, `sst dev`, `sst deploy`, etc.",

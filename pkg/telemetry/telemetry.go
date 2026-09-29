@@ -31,12 +31,18 @@ func Disable() error {
 }
 
 func Enable() error {
+	if !global.Telemetry {
+		return util.NewReadableError(nil, "Telemetry is turned off in this build of SST.")
+	}
 	path := filepath.Join(global.ConfigDir(), TELEMETRY_DISABLED_KEY)
 	os.Remove(path)
 	return nil
 }
 
 func IsEnabled() bool {
+	if !global.Telemetry {
+		return false
+	}
 	path := filepath.Join(global.ConfigDir(), TELEMETRY_DISABLED_KEY)
 	_, err := os.Stat(path)
 	return os.IsNotExist(err) && !flag.SST_TELEMETRY_DISABLED

@@ -5,6 +5,8 @@ package global
 const (
 	ReleaseRepo = "sst-community/sst"
 	NPMPackage  = "@sst-community/sst"
+	// Telemetry is off: the CLI's telemetry goes to SST's own PostHog project.
+	Telemetry = false
 )
 
 // NPMSpec is the package.json dependency value that installs this distribution
