@@ -268,27 +268,27 @@ Learn more about our [monorepo setup](/docs/set-up-a-monorepo/).
 
 ## CLI
 
-To make this all work, SST comes with a [CLI](/docs/reference/cli/). For JavaScript projects, install SST locally in your project so the CLI version is tracked with your app.
+To make this all work, SST comes with a [CLI](/docs/reference/cli/). For JavaScript projects, install SST locally in your project so the CLI version is tracked with your app. This installs the sst-community build under the name `sst`, so imports from `sst` keep working.
 
 <Tabs syncKey="package-manager">
   <TabItem label="npm">
   ```bash
-  npm install sst
+  npm install sst@npm:@sst-community/sst
   ```
   </TabItem>
   <TabItem label="pnpm">
   ```bash
-  pnpm add sst
+  pnpm add sst@npm:@sst-community/sst
   ```
   </TabItem>
   <TabItem label="Bun">
   ```bash
-  bun add sst
+  bun add sst@npm:@sst-community/sst
   ```
   </TabItem>
   <TabItem label="Yarn">
   ```bash
-  yarn add sst
+  yarn add sst@npm:@sst-community/sst
   ```
   </TabItem>
 </Tabs>
@@ -321,7 +321,7 @@ You can then run the CLI with your package manager.
 If you are not using JavaScript, you can install the CLI globally.
 
 ```bash
-curl -fsSL https://sst.dev/install | bash
+curl -fsSL https://raw.githubusercontent.com/sst-community/sst/main/install | bash
 ```
 
 Learn more about the [CLI](/docs/reference/cli/).

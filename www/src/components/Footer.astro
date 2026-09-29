@@ -4,7 +4,10 @@ import type { Props } from '@astrojs/starlight/props';
 import { Icon } from '@astrojs/starlight/components';
 import config from '../../config';
 
-const slug = Astro.url.pathname.replace(/^\//, "").replace(/\/$/, "");
+const slug = Astro.url.pathname
+  .slice(import.meta.env.BASE_URL.replace(/\/$/, "").length)
+  .replace(/^\//, "")
+  .replace(/\/$/, "");
 const editLink = userConfig.editLink.baseUrl;
 
 const {
@@ -47,22 +50,14 @@ else if (slug === "docs/examples") {
             <Icon name="pencil" size="1em" />
             Edit this page
           </a>
-          <a href={config.twitter} target="_blank" class="sl-flex">
-            <Icon name="x.com" size="1em" />
-            Follow us on X.com
-          </a>
-          <a href={`${config.github}/issues/new`} target="_blank" class="sl-flex">
+          <a href={`${config.fork}/issues/new`} target="_blank" class="sl-flex">
             <Icon name="github" size="1em" />
             Find a bug? Open an issue
-          </a>
-          <a href={config.discord} target="_blank" class="sl-flex">
-            <Icon name="discord" size="1em" />
-            Join our Discord community
           </a>
         </div>
         <div>
           <p>
-            Built with <a target="_blank" href={`${config.github}/tree/dev/www/sst.config.ts`}>Astro &amp; SST</a>
+            A community-maintained fork of <a target="_blank" href={config.github}>SST</a>
           </p>
           <p>
             Last updated —{' '}
@@ -73,7 +68,7 @@ else if (slug === "docs/examples") {
             )}
           </p>
           <p>
-            &copy; {new Date().getFullYear()}&nbsp;<a target="_blank" href="https://anoma.ly">Anomaly Innovations</a>
+            Based on the <a target="_blank" href="https://sst.dev/docs/">SST docs</a> &copy; Anomaly Innovations
           </p>
         </div>
       </div>
@@ -84,29 +79,12 @@ else if (slug === "docs/examples") {
   template === "splash" && (
     <footer class="splash">
       <p>
-        &copy; {new Date().getFullYear()}&nbsp;<a target="_blank" href="https://anoma.ly">Anomaly Innovations</a>
+        Based on the <a target="_blank" href="https://sst.dev/docs/">SST docs</a> &copy; Anomaly Innovations
       </p>
       <div class="links">
-        <div class="pages">
-          <a target="_blank" href="https://guide.sst.dev">Guide</a>
-          <a href="/about">About</a>
-          <a href={`mailto:${config.email}`}>Contact</a>
-        </div>
         <div class="social">
-          <a href={config.youtube} target="_blank">
-            <Icon name="youtube" size="1em" />
-          </a>
-          <a href={config.discord} target="_blank">
-            <Icon name="discord" size="1em" />
-          </a>
-          <a href={config.github} target="_blank">
+          <a href={config.fork} target="_blank">
             <Icon name="github" size="1em" />
-          </a>
-          <a href={config.linkedin} target="_blank">
-            <Icon name="linkedin" size="1em" />
-          </a>
-          <a href={config.twitter} target="_blank">
-            <Icon name="x.com" size="1em" />
           </a>
         </div>
       </div>

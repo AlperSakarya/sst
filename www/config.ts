@@ -30,6 +30,9 @@ export default {
   email: "hello@sst.dev",
   sst: "https://sst.dev",
   github: "https://github.com/anomalyco/sst",
+  // The sst-community fork, for the site's own GitHub links. `github` stays
+  // upstream's: example links are built from it with its `dev` branch.
+  fork: "https://github.com/sst-community/sst",
   discord: "https://sst.dev/discord",
   twitter: "https://x.com/SST_dev",
   youtube: "https://www.youtube.com/c/sst-dev",

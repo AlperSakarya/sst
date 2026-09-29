@@ -1,38 +1,18 @@
 ---
-import { Base64 } from "js-base64";
 import type { Props } from '@astrojs/starlight/props'
 import Default from '@astrojs/starlight/components/Head.astro'
-import config from '../../config';
 
-const slug = Astro.url.pathname.replace(/^\//, "").replace(/\/$/, "");
+// The sst-community site has no analytics and doesn't use SST's social card
+// service, so only the home page title override remains.
+const slug = Astro.url.pathname
+  .slice(import.meta.env.BASE_URL.replace(/\/$/, "").length)
+  .replace(/^\//, "")
+  .replace(/\/$/, "");
 const {
-  cover,
   entry: {
     data: { title },
   },
 } = Astro.locals.starlightRoute;
-
-const encodedTitle = encodeURIComponent(
-  Base64.encode(
-    // Convert to ASCII
-    encodeURIComponent(
-      // Truncate to fit S3's max key size
-      slug === "" || slug === "404"
-        ? config.tagline
-        : title.substring(0, 700)
-    )
-  )
-);
-
-const ogImageUrl = cover
-  ? `${import.meta.env.SITE}${cover}`
-  // Get the URL of the generated image for the current page using its
-  // ID and replace the file extension with `.png`.
-  : slug.startsWith("docs")
-    ? `${config.socialCard}/v3-docs/${encodedTitle}.png`
-    : slug.startsWith("blog/")
-      ? `${config.socialCard}/v3-blog/${encodedTitle}.png`
-      : `${config.socialCard}/v3-lander/${encodedTitle}.png`;
 ---
 
 { slug === "" && (
@@ -40,11 +20,3 @@ const ogImageUrl = cover
 )}
 
 <Default {...Astro.props}><slot /></Default>
-
-<meta property="og:image" content={ogImageUrl} />
-<meta name="twitter:image" content={ogImageUrl} />
-<script 
- defer 
- data-site-id="sst.dev" 
- src="https://assets.onedollarstats.com/tracker.js"> 
-</script>

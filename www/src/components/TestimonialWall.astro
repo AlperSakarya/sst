@@ -11,6 +11,7 @@ interface Props {
 }
 
 const { testimonials } = Astro.props;
+const base = import.meta.env.BASE_URL.replace(/\/$/, "");
 ---
 
 <div class="not-content testimonial-wall">
@@ -23,7 +24,7 @@ const { testimonials } = Astro.props;
       >
         <p class="testimonial-text">{t.text}</p>
         <div class="testimonial-author">
-          <img src={t.avatar} alt={t.name} class="testimonial-avatar" loading="lazy" />
+          <img src={t.avatar.startsWith("/") ? base + t.avatar : t.avatar} alt={t.name} class="testimonial-avatar" loading="lazy" />
           <span class="testimonial-name">{t.name}</span>
         </div>
       </Tag>

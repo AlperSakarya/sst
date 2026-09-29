@@ -1,6 +1,9 @@
-<a class="links" href="/blog/">Blog</a>
-<a class="links" href="/docs/">Docs</a>
-<a class="links sm" href="/docs/examples/">Examples</a>
+---
+const base = import.meta.env.BASE_URL.replace(/\/$/, "");
+---
+
+<a class="links" href={`${base}/docs/`}>Docs</a>
+<a class="links sm" href={`${base}/docs/examples/`}>Examples</a>
 
 <style>
   a.links {

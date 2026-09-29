@@ -1,15 +1,7 @@
 ---
-import Lander from './Lander.astro';
 import Default from '@astrojs/starlight/components/Hero.astro';
 
-const slug = Astro.url.pathname.replace(/^\//, "").replace(/\/$/, "");
-const isLander = slug === "";
-const isAboutPage = slug === "about";
+// The sst-community home page uses Starlight's hero rather than SST's lander.
 ---
 
-{ isLander
-    ? <Lander />
-    : isAboutPage
-      ? null
-      : <Default {...Astro.props}><slot /></Default>
-}
+<Default {...Astro.props}><slot /></Default>

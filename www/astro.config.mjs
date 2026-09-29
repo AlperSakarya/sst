@@ -2,7 +2,7 @@ import { defineConfig } from "astro/config";
 import starlight from "@astrojs/starlight";
 import sitemap from "@astrojs/sitemap";
 import config from "./config";
-import sst from "astro-sst";
+import forkLinks from "./src/fork-links.mjs";
 import { rehypeHeadingIds } from "@astrojs/markdown-remark";
 import rehypeAutolinkHeadings from "rehype-autolink-headings";
 
@@ -296,10 +296,13 @@ if (import.meta.env.DEV) {
   });
 }
 
+// The sst-community docs are a static site on GitHub Pages, under this path.
+const base = "/sst";
+
 // https://astro.build/config
 export default defineConfig({
-  site: "https://sst.dev",
-  adapter: sst(),
+  site: "https://sst-community.github.io",
+  base,
   server: {
     host: "0.0.0.0",
   },
@@ -308,26 +311,20 @@ export default defineConfig({
     enabled: false,
   },
   redirects: {
-    "/install": "https://raw.githubusercontent.com/sst/sst/dev/install",
-    "/discord": "https://discord.gg/sst",
+    "/install": "https://raw.githubusercontent.com/sst-community/sst/main/install",
     "/guide": "https://guide.sst.dev",
-    "/docs/workflow": "/docs/basics",
-    "/docs/start/aws/container": "/docs/start/aws/express",
-    "/docs/common-errors": "/docs/component/aws/svelte-kit/#assets",
+    "/docs/workflow": `${base}/docs/basics`,
+    "/docs/start/aws/container": `${base}/docs/start/aws/express`,
+    "/docs/common-errors": `${base}/docs/component/aws/svelte-kit/#assets`,
   },
   integrations: [
     sitemap({
       filter: (page) => !page.includes("/dummy/"),
     }),
     starlight({
-      title: "SST",
-      logo: {
-        light: "./src/assets/logo-light.svg",
-        dark: "./src/assets/logo-dark.svg",
-        replacesTitle: true,
-      },
+      title: "sst-community",
       lastUpdated: !process.env.CI,
-      favicon: "/favicon.svg",
+      favicon: "/fork-favicon.svg",
       pagination: false,
       markdown: {
         // Use custom heading links
@@ -348,13 +345,9 @@ export default defineConfig({
         "./src/styles/tsdoc.css",
         "./src/styles/heading.css",
       ],
-      social: [
-        { icon: "discord", label: "Discord", href: config.discord },
-        { icon: "github", label: "GitHub", href: config.github },
-        { icon: "twitter", label: "X.com", href: config.twitter },
-      ],
+      social: [{ icon: "github", label: "GitHub", href: config.fork }],
       editLink: {
-        baseUrl: "https://github.com/sst/sst/edit/dev/www",
+        baseUrl: "https://github.com/sst-community/sst/edit/main/www",
       },
       components: {
         Hero: "./src/components/Hero.astro",
@@ -366,41 +359,12 @@ export default defineConfig({
         MobileMenuFooter: "./src/components/MobileMenuFooter.astro",
       },
       head: [
-        {
-          tag: "script",
-          attrs: {
-            src: "https://widget.kapa.ai/kapa-widget.bundle.js",
-            "data-website-id": "6853540a-5c1e-4de3-9e2f-b893b6b825a8",
-            "data-project-name": "SST",
-            "data-project-color": "#E27152",
-            "data-modal-header-bg-color": "white",
-            "data-button-hide": "true",
-            "data-modal-title": "Ask AI",
-            "data-font-family": "var(--__sl-font)",
-            "data-modal-title-font-family": "var(--__sl-font-headings)",
-            "data-modal-border-radius": "0.625rem",
-            "data-modal-example-questions":
-              "How do I deploy a Next.js app?,How do I set a secret?,How do I link resources together?,How do I set a custom domain for my API?",
-            "data-modal-override-open-class": "kapa-modal-open",
-            "data-project-logo": "/logo-square.png",
-            async: true,
-          },
-        },
-        // Add ICO favicon fallback for Safari
-        {
-          tag: "link",
-          attrs: {
-            rel: "icon",
-            href: "/favicon.ico",
-            sizes: "32x32",
-          },
-        },
         // Add light/dark mode favicon
         {
           tag: "link",
           attrs: {
             rel: "icon",
-            href: "/favicon.svg",
+            href: `${base}/fork-favicon.svg`,
             media: "(prefers-color-scheme: light)",
           },
         },
@@ -408,7 +372,7 @@ export default defineConfig({
           tag: "link",
           attrs: {
             rel: "icon",
-            href: "/favicon.svg",
+            href: `${base}/fork-favicon.svg`,
             media: "(prefers-color-scheme: dark)",
           },
         },
@@ -425,6 +389,7 @@ export default defineConfig({
           behavior: "wrap",
         },
       ],
+      [forkLinks, { base }],
     ],
   },
 });

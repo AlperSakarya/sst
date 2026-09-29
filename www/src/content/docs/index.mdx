@@ -1,7 +1,35 @@
 ---
-title: SST
+title: sst-community
+description: A community-maintained fork of SST.
 template: splash
 pagefind: false
 hero:
-  title: "n/a"
+  title: sst-community
+  tagline: A community-maintained fork of SST. It tracks upstream releases and carries fixes that haven't landed upstream yet. It is not affiliated with SST or Anomaly.
+  actions:
+    - text: Read the docs
+      link: /sst/docs/
+      icon: right-arrow
+    - text: GitHub
+      link: https://github.com/sst-community/sst
+      icon: external
+      variant: minimal
 ---
+
+## Install
+
+Install the fork under the name `sst`, so `import ... from "sst"` keeps working.
+
+```bash
+npm install sst@npm:@sst-community/sst
+```
+
+To switch an existing project from SST, change its dependency to `"sst": "npm:@sst-community/sst@<version>"` and reinstall. Without Node:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/sst-community/sst/main/install | bash
+```
+
+## What's different
+
+Each [release](https://github.com/sst-community/sst/releases) lists what it changes from the upstream version it's based on. Otherwise these docs are SST's own, built from this repo.
