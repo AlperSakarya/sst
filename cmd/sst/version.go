@@ -6,6 +6,7 @@ import (
 
 	"github.com/pulumi/pulumi/sdk/v3"
 	"github.com/sst/sst/v3/cmd/sst/cli"
+	"github.com/sst/sst/v3/cmd/sst/mosaic/ui"
 	"github.com/sst/sst/v3/pkg/global"
 )
 
@@ -16,7 +17,11 @@ var CmdVersion = &cli.Command{
 		Long:  `Prints the current version of the CLI.`,
 	},
 	Run: func(cli *cli.Cli) error {
-		fmt.Println("sst", version)
+		if ui.Distribution != "" {
+			fmt.Println("sst", version, "("+ui.Distribution+")")
+		} else {
+			fmt.Println("sst", version)
+		}
 		if cli.Bool("verbose") {
 			fmt.Println("pulumi", sdk.Version)
 			fmt.Println("config", global.ConfigDir())

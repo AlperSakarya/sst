@@ -49,6 +49,7 @@ type UI struct {
 	timing     map[string]time.Time
 	parents    map[string]string
 	workerTime map[string]time.Time
+	colors     map[string]lipgloss.Style
 	complete   *project.CompleteEvent
 	footer     *footer
 	buffer     []interface{}
@@ -103,6 +104,7 @@ func New(ctx context.Context, options ...Option) *UI {
 	slog.Info("initializing ui", "isTTY", isTTY)
 	result := &UI{
 		workerTime: map[string]time.Time{},
+		colors:     map[string]lipgloss.Style{},
 		hasBlank:   false,
 		options:    opts,
 	}
@@ -178,7 +180,7 @@ func (u *UI) Event(unknown interface{}) {
 			return
 		}
 		u.workerTime[evt.WorkerID] = time.Now()
-		u.printEvent(GetColor(evt.WorkerID), fmt.Sprintf("%-11s", "Start"), evt.Command)
+		u.printWorkerEvent(evt.WorkerID, evt.TaskID, fmt.Sprintf("%-11s", "Start"), evt.Command)
 
 	case *aws.TaskLogEvent:
 		if !u.matchFilter(evt.TaskID) {
@@ -186,7 +188,7 @@ func (u *UI) Event(unknown interface{}) {
 		}
 		duration := time.Since(u.workerTime[evt.WorkerID]).Round(time.Millisecond)
 		formattedDuration := fmt.Sprintf("%.9s", fmt.Sprintf("+%v", duration))
-		u.printEvent(GetColor(evt.WorkerID), formattedDuration, evt.Line)
+		u.printWorkerEvent(evt.WorkerID, evt.TaskID, formattedDuration, evt.Line)
 
 	case *aws.TaskCompleteEvent:
 		if !u.matchFilter(evt.TaskID) {
@@ -194,7 +196,7 @@ func (u *UI) Event(unknown interface{}) {
 		}
 		duration := time.Since(u.workerTime[evt.WorkerID]).Round(time.Millisecond)
 		formattedDuration := fmt.Sprintf("took %.9s", fmt.Sprintf("+%v", duration))
-		u.printEvent(GetColor(evt.WorkerID), "Done", formattedDuration)
+		u.printWorkerEvent(evt.WorkerID, evt.TaskID, "Done", formattedDuration)
 
 	case *aws.TaskMissingCommandEvent:
 		if !u.matchFilter(evt.Name) {
@@ -207,7 +209,7 @@ func (u *UI) Event(unknown interface{}) {
 			return
 		}
 		u.workerTime[evt.WorkerID] = time.Now()
-		u.printEvent(GetColor(evt.WorkerID), TEXT_NORMAL_BOLD.Render(fmt.Sprintf("%-11s", "Invoke")), u.functionName(evt.FunctionID))
+		u.printWorkerEvent(evt.WorkerID, evt.FunctionID, TEXT_NORMAL_BOLD.Render(fmt.Sprintf("%-11s", "Invoke")), u.functionName(evt.FunctionID))
 
 	case *aws.FunctionResponseEvent:
 		if !u.matchFilter(evt.FunctionID) {
@@ -215,7 +217,7 @@ func (u *UI) Event(unknown interface{}) {
 		}
 		duration := time.Since(u.workerTime[evt.WorkerID]).Round(time.Millisecond)
 		formattedDuration := fmt.Sprintf("took %.9s", fmt.Sprintf("+%v", duration))
-		u.printEvent(GetColor(evt.WorkerID), "Done", formattedDuration)
+		u.printWorkerEvent(evt.WorkerID, evt.FunctionID, "Done", formattedDuration)
 
 	case *aws.FunctionLogEvent:
 		if !u.matchFilter(evt.FunctionID) {
@@ -223,7 +225,7 @@ func (u *UI) Event(unknown interface{}) {
 		}
 		duration := time.Since(u.workerTime[evt.WorkerID]).Round(time.Millisecond)
 		formattedDuration := fmt.Sprintf("%.9s", fmt.Sprintf("+%v", duration))
-		u.printEvent(GetColor(evt.WorkerID), formattedDuration, u.formatFunctionLogLine(evt.Line))
+		u.printWorkerEvent(evt.WorkerID, evt.FunctionID, formattedDuration, u.formatFunctionLogLine(evt.Line))
 
 	case *aws.FunctionBuildEvent:
 		if !u.matchFilter(evt.FunctionID) {
@@ -242,13 +244,13 @@ func (u *UI) Event(unknown interface{}) {
 		if !u.matchFilter(evt.FunctionID) {
 			return
 		}
-		u.printEvent(GetColor(evt.WorkerID), TEXT_DANGER.Render(fmt.Sprintf("%-11s", "Error")), u.functionName(evt.FunctionID))
-		u.printEvent(GetColor(evt.WorkerID), "", evt.ErrorMessage)
+		u.printWorkerEvent(evt.WorkerID, evt.FunctionID, TEXT_DANGER.Render(fmt.Sprintf("%-11s", "Error")), u.functionName(evt.FunctionID))
+		u.printWorkerEvent(evt.WorkerID, evt.FunctionID, "", evt.ErrorMessage)
 		for _, item := range evt.Trace {
 			if strings.Contains(item, "Error:") {
 				continue
 			}
-			u.printEvent(GetColor(evt.WorkerID), "", "↳ "+strings.TrimSpace(item))
+			u.printWorkerEvent(evt.WorkerID, evt.FunctionID, "", "↳ "+strings.TrimSpace(item))
 		}
 
 	case *project.ConcurrentUpdateEvent:
@@ -556,8 +558,9 @@ func (u *UI) Event(unknown interface{}) {
 			return
 		}
 		url, _ := url.Parse(evt.TailEvent.Event.Request.URL)
-		u.printEvent(
-			GetColor(evt.WorkerID),
+		u.printWorkerEvent(
+			evt.WorkerID,
+			evt.WorkerID,
 			TEXT_NORMAL_BOLD.Render(fmt.Sprintf("%-11s", "Invoke")),
 			u.functionName(evt.WorkerID)+" "+evt.TailEvent.Event.Request.Method+" "+url.Path,
 		)
@@ -577,10 +580,10 @@ func (u *UI) Event(unknown interface{}) {
 			}
 
 			for _, item := range strings.Split(strings.Join(line, " "), "\n") {
-				u.printEvent(GetColor(evt.WorkerID), formattedDuration, item)
+				u.printWorkerEvent(evt.WorkerID, evt.WorkerID, formattedDuration, item)
 			}
 		}
-		u.printEvent(GetColor(evt.WorkerID), "Done", evt.TailEvent.Outcome)
+		u.printWorkerEvent(evt.WorkerID, evt.WorkerID, "Done", evt.TailEvent.Outcome)
 	}
 
 }
@@ -590,6 +593,12 @@ var Colors = []lipgloss.Style{
 	lipgloss.NewStyle().Foreground(lipgloss.Color("14")),
 	lipgloss.NewStyle().Foreground(lipgloss.Color("2")),
 	lipgloss.NewStyle().Foreground(lipgloss.Color("12")),
+	// Fixed 256-color hues that stay clear of the red/yellow status colors and
+	// keep at least 3:1 contrast on both black and white backgrounds.
+	lipgloss.NewStyle().Foreground(lipgloss.Color("166")),
+	lipgloss.NewStyle().Foreground(lipgloss.Color("134")),
+	lipgloss.NewStyle().Foreground(lipgloss.Color("32")),
+	lipgloss.NewStyle().Foreground(lipgloss.Color("169")),
 }
 
 func GetColor(input string) lipgloss.Style {
@@ -598,6 +607,18 @@ func GetColor(input string) lipgloss.Style {
 		hash += int(c)
 	}
 	return Colors[hash%len(Colors)]
+}
+
+// workerColor hands out palette colors in first-seen order, so workers that
+// start together (concurrent cold starts) never share a color until more than
+// len(Colors) are active. GetColor's hash can collide with just two.
+func (u *UI) workerColor(workerID string) lipgloss.Style {
+	style, ok := u.colors[workerID]
+	if !ok {
+		style = Colors[len(u.colors)%len(Colors)]
+		u.colors[workerID] = style
+	}
+	return style
 }
 
 func (u *UI) functionName(functionID string) string {
@@ -637,6 +658,49 @@ func (u *UI) printEvent(barColor lipgloss.Style, label string, message ...string
 	}
 }
 
+// workerTagWidth is the widest name shown inside a worker line's [tag].
+const workerTagWidth = 16
+
+// workerTag formats a function, worker or task ID as a fixed-width tag.
+// IDs that don't fit first lose the "Handler"/"Function" suffix SST adds to
+// generated functions, then are shortened in the middle so both the component
+// name and the route or subscriber suffix that tells siblings apart survive.
+func workerTag(id string) string {
+	name := []rune(id)
+	if len(name) > workerTagWidth {
+		for _, suffix := range []string{"Handler", "Function"} {
+			if trimmed := strings.TrimSuffix(id, suffix); trimmed != id && trimmed != "" {
+				name = []rune(trimmed)
+				break
+			}
+		}
+	}
+	if len(name) > workerTagWidth {
+		head := (workerTagWidth - 1) / 2
+		tail := workerTagWidth - 1 - head
+		name = []rune(string(name[:head]) + "…" + string(name[len(name)-tail:]))
+	}
+	return fmt.Sprintf("%-*s", workerTagWidth+2, "["+string(name)+"]")
+}
+
+// printWorkerEvent prints one line of a function, worker or task invocation.
+// The bar is colored per worker and the tag names the source, so interleaved
+// output stays attributable even without color (NO_COLOR, piped output,
+// `sst dev --mode=mono`). Multi-line messages are split so every physical line
+// carries the bar and tag.
+func (u *UI) printWorkerEvent(workerID string, sourceID string, label string, message string) {
+	prefix := u.workerColor(workerID).Copy().Bold(true).Render("|  " + workerTag(sourceID) + " ")
+	for i, line := range strings.Split(strings.TrimRight(message, "\r\n"), "\n") {
+		u.print(prefix)
+		if label != "" && i == 0 {
+			u.print(TEXT_DIM.Render(fmt.Sprint(fmt.Sprintf("%-11s", label), " ")))
+		} else if label != "" {
+			u.print(strings.Repeat(" ", 12))
+		}
+		u.println(TEXT_NORMAL.Render(strings.TrimSuffix(line, "\r")))
+	}
+}
+
 func (u *UI) Destroy() {
 	if u.footer != nil {
 		u.footer.Destroy()
@@ -646,12 +710,21 @@ func (u *UI) Destroy() {
 	}
 }
 
+// Distribution names a downstream build of the CLI, such as "sst-community".
+// Upstream builds leave it empty. Set it at link time:
+//
+//	-ldflags "-X github.com/sst/sst/v3/cmd/sst/mosaic/ui.Distribution=sst-community"
+var Distribution = ""
+
 func (u *UI) header(version, app, stage string) {
 	if u.hasHeader {
 		return
 	}
 	if flag.SST_EXPERIMENTAL {
 		version = version + " (experimental)"
+	}
+	if Distribution != "" {
+		version = version + " (" + Distribution + ")"
 	}
 	u.println(
 		TEXT_HIGHLIGHT_BOLD.Render("SST "+version),

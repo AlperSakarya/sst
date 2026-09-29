@@ -8,6 +8,10 @@ builds:
       - darwin
       - windows
     main: ./cmd/sst
+    # Setting ldflags replaces goreleaser's defaults, so main.version is repeated.
+    ldflags:
+      - -s -w -X main.version={{.Version}}
+      - -X github.com/sst/sst/v3/cmd/sst/mosaic/ui.Distribution=sst-community
 
 archives:
   - formats:
