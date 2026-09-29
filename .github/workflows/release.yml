@@ -71,12 +71,21 @@ jobs:
       - name: Run Go tests
         run: go test -vet=all ./...
 
+      # Hand-written notes in .github/release-notes/<tag>.md replace the
+      # generated changelog, e.g. for the first release, which has no earlier
+      # fork tag to list commits from.
+      - name: Release notes
+        id: notes
+        run: |
+          notes=".github/release-notes/${GITHUB_REF_NAME}.md"
+          if [ -f "$notes" ]; then echo "args=--release-notes $notes" >> "$GITHUB_OUTPUT"; fi
+
       - name: Release CLI
         uses: goreleaser/goreleaser-action@v6
         with:
           distribution: goreleaser
           version: latest
-          args: release --clean
+          args: release --clean ${{ steps.notes.outputs.args }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
