@@ -347,7 +347,7 @@ export class Task extends Component implements Link.Linkable {
                 ...v[0],
                 entrypoint: undefined,
                 command: undefined,
-                image: output("ghcr.io/anomalyco/sst/bridge-task:latest"),
+                image: output("ghcr.io/sst-community/sst/bridge-task:latest"),
                 environment: {
                   ...v[0].environment,
                   SST_TASK_ID: name,

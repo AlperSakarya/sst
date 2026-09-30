@@ -39,8 +39,8 @@ docker buildx build \
   --platform linux/amd64,linux/arm64 \
   -f Dockerfile \
   $CACHE_ARGS \
-  -t ghcr.io/anomalyco/sst/bridge-task:$timestamp \
-  -t ghcr.io/anomalyco/sst/bridge-task:latest \
+  -t ghcr.io/sst-community/sst/bridge-task:$timestamp \
+  -t ghcr.io/sst-community/sst/bridge-task:latest \
   $([ "$DOCKER_PUSH" = "true" ] && echo "--push") \
   build
 
