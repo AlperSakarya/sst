@@ -1643,7 +1643,7 @@ export interface FunctionArgs {
  *   dependencies = ["sst-sdk"]
  *
  *   [tool.uv.sources]
- *   sst-sdk = { git = "https://github.com/anomalyco/sst.git", subdirectory = "sdk/python", branch = "dev" }
+ *   sst-sdk = { git = "https://github.com/sst-community/sst.git", subdirectory = "sdk/python", branch = "main" }
  *   ```
  *   </TabItem>
  *   <TabItem label="Go">

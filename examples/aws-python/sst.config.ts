@@ -65,7 +65,7 @@
  * dependencies = ["sst-sdk"]
  *
  * [tool.uv.sources]
- * sst-sdk = { git = "https://github.com/anomalyco/sst.git", subdirectory = "sdk/python", branch = "dev" }
+ * sst-sdk = { git = "https://github.com/sst-community/sst.git", subdirectory = "sdk/python", branch = "main" }
  * ```
  *
  * You also want to set the Python version in your `pyproject.toml` to the same
