@@ -120,14 +120,15 @@ go build -ldflags "-X main.version=<version> -X github.com/sst/sst/v3/cmd/sst/mo
 Three rulesets on the repo set this. Admins bypass the first two.
 
 - **`Release tags`:** only an admin can create, move or delete a `v*` tag.
-- **`main`:** a change needs a pull request and a passing `check` run. Force-pushes and deletion are blocked. An admin pushes a merge of an SST release directly.
+- **`main`:** a change needs a pull request, an approval from someone other than its author, and a passing `check` run. The approval has to cover the latest push. Force-pushes and deletion are blocked. An admin pushes a merge of an SST release directly.
 - **`v5`:** the branch can't be deleted, by anyone. Merged branches are deleted automatically, and this keeps `v5` when it's merged into `main`. To delete it on purpose, remove the ruleset first.
 
 Also:
 
 - **`.github/CODEOWNERS`** lists the files that decide what's built, released and run when the package is installed. A pull request that touches one needs its owner's review. When you add such a file, add it there.
 - **Merge methods:** squash for a contributor's pull request, a merge commit for an SST release. Rebase-merge is off.
-- **Approving reviews aren't required yet**, because there is one maintainer. Turn that on in the `main` ruleset when there's a second.
+- **Committers** are the members of the `committers` team, which has Write access. An approval only counts from someone with Write access, so two committers can land a change between them: one opens the pull request, the other approves it. They can't release, and a change to a file in CODEOWNERS still needs its owner.
+- **Admins bypass the `main` rule.** While there is one maintainer, that is how their own changes land, since nobody else could approve them.
 - **Pull requests from forks** run `check.yml` with a read-only token and no secrets. A first-time contributor's run waits for a maintainer's approval.
 
 ## Issues, ideas and votes
