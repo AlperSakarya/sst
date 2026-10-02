@@ -1,0 +1,18 @@
+# A pull request that changes one of these needs a review from its owner: they
+# decide what gets built, released to npm, and run on a user's machine at install.
+
+# Workflows, their scripts, and this file.
+/.github/ @the-human-mustachio
+
+# The release build and the container image it pushes.
+/.goreleaser.yml @the-human-mustachio
+/platform/scripts/build @the-human-mustachio
+
+# The npm package: what's published, and what runs when it's installed.
+/sdk/js/package.json @the-human-mustachio
+/sdk/js/scripts/ @the-human-mustachio
+/sdk/js/bin/ @the-human-mustachio
+
+# The install script, and where the CLI installs and upgrades from.
+/install @the-human-mustachio
+/pkg/global/distribution.go @the-human-mustachio
