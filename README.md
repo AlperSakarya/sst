@@ -62,6 +62,8 @@ Learn more about some of the key concepts:
 
 Bug fixes, docs and help with issues are welcome. [CONTRIBUTING.md](https://github.com/sst-community/sst/blob/main/CONTRIBUTING.md) covers the setup, what to run before a pull request, and how pull requests are merged. For questions, ask on [Discord](https://discord.gg/DQWT3WGVm2).
 
+To vote on what gets fixed next, add a 👍 to an issue. Here are the [open issues, most-wanted first](https://github.com/sst-community/sst/issues?q=is%3Aissue+is%3Aopen+sort%3Areactions-%2B1-desc).
+
 ## Running Locally
 
 Run `bun run setup`. You need [Go](https://go.dev/) and [Bun](https://bun.sh/) installed.

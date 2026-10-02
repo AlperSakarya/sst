@@ -7,6 +7,7 @@ sst-community is a community-maintained fork of [SST](https://github.com/anomaly
 - **A bug:** open an [issue](https://github.com/sst-community/sst/issues), or pick one that's open. If the bug is in SST itself, link the upstream issue or pull request when there is one.
 - **A larger change:** talk it through first, in an issue or on [Discord](https://discord.gg/DQWT3WGVm2), so the work isn't wasted.
 - **A question:** ask on Discord.
+- **A vote:** add a 👍 to an issue you want fixed. The [open issues, most-wanted first](https://github.com/sst-community/sst/issues?q=is%3Aissue+is%3Aopen+sort%3Areactions-%2B1-desc) are a good place to pick up work. Votes show what's wanted, and maintainers decide what's done and in what order.
 
 ## Set up
 
