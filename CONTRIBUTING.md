@@ -43,6 +43,7 @@ If the change affects what gets deployed or how `sst dev` behaves, try it on an 
 - Keep one change to a pull request.
 - Title it the way commits here are titled: the area, a colon, then what the change does. For example, `Function: retain the shared dev bridge code object on delete`.
 - The `check` workflow has to pass. On your first pull request, a maintainer approves the run before it starts.
+- A committer or maintainer other than the author has to approve it. Anyone can review, and reviews from anyone are welcome, but only theirs count toward merging. If you push again after the approval, it needs approving again.
 - Pull requests are squash-merged, so the title becomes the commit.
 - A change to how the fork is built, released or installed needs a review from a code owner. `.github/CODEOWNERS` lists those files.
 
