@@ -1,0 +1,51 @@
+name: Report a bug
+description: Something in sst-community doesn't work as it should.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Search the open issues first. If the bug is already reported, add a 👍 to that issue instead of opening another. Maintainers look at the most-wanted ones first.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you did, what you expected, and what happened instead.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: How to reproduce it
+      description: The smallest `sst.config.ts` or set of steps that shows it.
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: What `sst version` prints.
+      placeholder: sst 4.17.2 (sst-community)
+    validations:
+      required: true
+  - type: dropdown
+    id: upstream
+    attributes:
+      label: Does it also happen with SST itself?
+      options:
+        - "Yes"
+        - "No"
+        - I haven't tried
+    validations:
+      required: true
+  - type: input
+    id: upstream-link
+    attributes:
+      label: Upstream issue or pull request
+      description: A link, if SST's repo has one for this.
+      placeholder: https://github.com/anomalyco/sst/issues/
+  - type: textarea
+    id: more
+    attributes:
+      label: Anything else
+      description: Logs, your operating system, a workaround you found.

@@ -1,0 +1,38 @@
+name: Ask for an upstream fix
+description: A fix that's open in SST's repo and that you'd like sst-community to carry.
+title: "Carry: "
+labels: ["upstream fix"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        SST's repo has pull requests and issues with fixes that haven't been released. Use this to ask for one to be carried here.
+
+        Search the open issues first. If it's already been asked for, add a 👍 to that issue instead of opening another. Maintainers look at the most-wanted ones first, and decide what's carried.
+  - type: input
+    id: link
+    attributes:
+      label: The pull request or issue in SST's repo
+      placeholder: https://github.com/anomalyco/sst/pull/
+    validations:
+      required: true
+  - type: textarea
+    id: why
+    attributes:
+      label: What it fixes for you
+      description: What breaks without it, and how you're working around it now.
+    validations:
+      required: true
+  - type: dropdown
+    id: tried
+    attributes:
+      label: Have you run the fix?
+      options:
+        - "Yes, I'm running it"
+        - "No"
+    validations:
+      required: true
+  - type: textarea
+    id: more
+    attributes:
+      label: Anything else

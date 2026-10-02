@@ -130,6 +130,14 @@ Also:
 - **Approving reviews aren't required yet**, because there is one maintainer. Turn that on in the `main` ruleset when there's a second.
 - **Pull requests from forks** run `check.yml` with a read-only token and no secrets. A first-time contributor's run waits for a maintainer's approval.
 
+## Issues, ideas and votes
+
+- **Issues** are for bugs, and for fixes to carry from SST's repo. `.github/ISSUE_TEMPLATE/` has a form for each: a bug report (label `bug`) and a request for an upstream fix (label `upstream fix`).
+- **People vote with a 👍 on the issue.** [Open issues, most-wanted first](https://github.com/sst-community/sst/issues?q=is%3Aissue+is%3Aopen+sort%3Areactions-%2B1-desc).
+- **Ideas and direction** go in [Discussions](https://github.com/sst-community/sst/discussions), in the Ideas category, which has its own upvotes. Polls are there too.
+- **Questions** go to Discord.
+- Votes show what's wanted. Maintainers decide what's done, and in what order.
+
 ## Still SST's
 
 These are used as SST publishes them. They read the `SST_RESOURCE_*` environment variables, which the fork hasn't changed.
