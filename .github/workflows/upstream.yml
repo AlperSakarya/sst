@@ -26,7 +26,8 @@ permissions:
 concurrency: ${{ github.workflow }}
 
 jobs:
-  check:
+  # Not named `check`: that is the status check pull requests into main need.
+  upstream:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
