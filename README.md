@@ -60,11 +60,7 @@ Learn more about some of the key concepts:
 
 ## Contributing
 
-Here's how you can contribute:
-
-- Help us improve our docs
-- Find a bug? Open an issue
-- Feature request? Submit a PR 
+Bug fixes, docs and help with issues are welcome. [CONTRIBUTING.md](https://github.com/sst-community/sst/blob/main/CONTRIBUTING.md) covers the setup, what to run before a pull request, and how pull requests are merged. For questions, ask on [Discord](https://discord.gg/DQWT3WGVm2).
 
 ## Running Locally
 
