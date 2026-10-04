@@ -147,4 +147,4 @@ These are used as SST publishes them. They read the `SST_RESOURCE_*` environment
 - the Go SDK, imported as `github.com/sst/sst/v3/sdk/golang/resource`
 - `sst-sdk` on PyPI. The docs and examples install the Python SDK from this repo's `main` instead.
 
-Many docs links and a few CLI messages still point at SST's repo and at sst.dev.
+The CLI's messages and the components' errors link to this docs site. Docs pages still link to SST's repo, mostly for the examples, and to the SST Console, SST's guide and its blog, which have no counterpart here.
