@@ -86,11 +86,14 @@ Use plain `X.Y.Z`. A suffix such as `4.17.1-community.1` fails every `version` r
 
 Things to know:
 
-- **npm publishing has no token.** It uses trusted publishing. Each package has to exist on npm with a trusted publisher for this repo's `release.yml`. For a new package: `npm trust github <package> --repo sst-community/sst --file release.yml --allow-publish` (npm 11.15 or later).
+- **The release job runs in the `release` environment.** Only `v*` tags can use it, and only admins can push those. Keep what a release needs in that environment and not on the repo: anyone with Write access can push a branch, and a workflow on a branch can read repo secrets and ask for an npm token.
+- **npm publishing has no token.** It uses trusted publishing. Each package has to exist on npm with a trusted publisher for this repo's `release.yml` in the `release` environment. For a new package: `npm trust github <package> --repo sst-community/sst --file release.yml --env release --allow-publish` (npm 11.15 or later).
+- **Releases are immutable**, every one after 4.17.2. Once a release is published, its files and its tag can't be changed, so `install` and `sst upgrade` download what the release built. goreleaser uploads to a draft and publishes it last. A release can still be deleted, and its tag name can't be used again.
 - **The package is renamed at publish time.** `sdk/js/package.json` stays named `sst`, and `sdk/js/scripts/release.ts` publishes it as `@sst-community/sst`. Renaming it in the repo changes `bun.lockb` and breaks `bun install --frozen-lockfile`.
 - **Users install it under the name `sst`**, as `sst@npm:@sst-community/sst`, so `import ... from "sst"` keeps working. `sst upgrade` and `sst init` write that alias. `pkg/global/distribution.go` holds the release repo and the package name.
 - **The container image has to be public.** GitHub may create the `sst/bridge-task` package as private on its first push. Until it's public, `sst dev` can't start a Task.
-- **The Discord webhook** is the `DISCORD_WEBHOOK_URL` repo secret. Without it the step is skipped. `.github/scripts/announce-release.sh` is the script.
+- **The environment doesn't cover the image.** A workflow on any branch can push `bridge-task:latest` with its own `GITHUB_TOKEN`.
+- **The Discord webhook** is the `DISCORD_WEBHOOK_URL` secret of the `release` environment. Without it the step is skipped. `.github/scripts/announce-release.sh` is the script.
 - **Fork builds are labelled.** `.goreleaser.yml` sets `ui.Distribution=sst-community`, which `sst version` and the `sst dev` banner show. Keep it out of `main.version`.
 
 ## Building it yourself
@@ -127,7 +130,8 @@ Also:
 
 - **`.github/CODEOWNERS`** lists the files that decide what's built, released and run when the package is installed. A pull request that touches one needs its owner's review. When you add such a file, add it there.
 - **Merge methods:** squash for a contributor's pull request, a merge commit for an SST release. Rebase-merge is off.
-- **Committers** are the members of the `committers` team, which has Write access. An approval only counts from someone with Write access, so two committers can land a change between them: one opens the pull request, the other approves it. They can't release, and a change to a file in CODEOWNERS still needs its owner.
+- **Committers** are the members of the `committers` team, which has Write access. An approval only counts from someone with Write access, so two committers can land a change between them: one opens the pull request, the other approves it. They can't release, and a change to a file in CODEOWNERS still needs its owner. They can push branches other than `main` and `v5` and run workflows on them, which is why releasing goes through the `release` environment.
+- **Moderators** have the Triage role on the repo, given under Settings → Collaborators and teams. They label, close and reopen issues and pull requests, mark duplicates, hide comments, lock conversations and moderate Discussions. They can't push or merge, and their approval doesn't count. Blocking a user from the org takes an admin.
 - **Admins bypass the `main` rule.** While there is one maintainer, that is how their own changes land, since nobody else could approve them.
 - **Pull requests from forks** run `check.yml` with a read-only token and no secrets. A first-time contributor's run waits for a maintainer's approval.
 
