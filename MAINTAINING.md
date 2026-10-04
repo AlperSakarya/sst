@@ -75,7 +75,7 @@ Use plain `X.Y.Z`. A suffix such as `4.17.1-community.1` fails every `version` r
 ## Releasing
 
 1. Write `.github/release-notes/vX.Y.Z.md`. Name the SST release it includes. Keep `### Install` as the last section: the Discord post leaves out everything from that heading on.
-2. Push the `vX.Y.Z` tag. Only an admin can.
+2. Push the `vX.Y.Z` tag on a commit that's on `main`. Only an admin or a member of the `releasers` team can.
 
 `release.yml` then:
 
@@ -86,7 +86,7 @@ Use plain `X.Y.Z`. A suffix such as `4.17.1-community.1` fails every `version` r
 
 Things to know:
 
-- **The release job runs in the `release` environment.** Only `v*` tags can use it, and only admins can push those. Keep what a release needs in that environment and not on the repo: anyone with Write access can push a branch, and a workflow on a branch can read repo secrets and ask for an npm token.
+- **The release job runs in the `release` environment.** Only `v*` tags can use it, and only admins and the `releasers` team can push those. Keep what a release needs in that environment and not on the repo: anyone with Write access can push a branch, and a workflow on a branch can read repo secrets and ask for an npm token.
 - **npm publishing has no token.** It uses trusted publishing. Each package has to exist on npm with a trusted publisher for this repo's `release.yml` in the `release` environment. For a new package: `npm trust github <package> --repo sst-community/sst --file release.yml --env release --allow-publish` (npm 11.15 or later).
 - **Releases are immutable**, every one after 4.17.2. Once a release is published, its files and its tag can't be changed, so `install` and `sst upgrade` download what the release built. goreleaser uploads to a draft and publishes it last. A release can still be deleted, and its tag name can't be used again.
 - **The package is renamed at publish time.** `sdk/js/package.json` stays named `sst`, and `sdk/js/scripts/release.ts` publishes it as `@sst-community/sst`. Renaming it in the repo changes `bun.lockb` and breaks `bun install --frozen-lockfile`.
@@ -120,9 +120,9 @@ go build -ldflags "-X main.version=<version> -X github.com/sst/sst/v3/cmd/sst/mo
 
 ## Who can merge and release
 
-Three rulesets on the repo set this. Admins bypass the first two.
+Three rulesets on the repo set this. Admins bypass the first two, and the `releasers` team bypasses the first.
 
-- **`Release tags`:** only an admin can create, move or delete a `v*` tag.
+- **`Release tags`:** only an admin or a member of `releasers` can create, move or delete a `v*` tag.
 - **`main`:** a change needs a pull request, an approval from someone other than its author, and a passing `check` run. The approval has to cover the latest push. Force-pushes and deletion are blocked. An admin pushes a merge of an SST release directly.
 - **`v5`:** the branch can't be deleted, by anyone. Merged branches are deleted automatically, and this keeps `v5` when it's merged into `main`. To delete it on purpose, remove the ruleset first.
 
@@ -130,7 +130,8 @@ Also:
 
 - **`.github/CODEOWNERS`** lists the files that decide what's built, released and run when the package is installed. A pull request that touches one needs its owner's review. When you add such a file, add it there.
 - **Merge methods:** squash for a contributor's pull request, a merge commit for an SST release. Rebase-merge is off.
-- **Committers** are the members of the `committers` team, which has Write access. An approval only counts from someone with Write access, so two committers can land a change between them: one opens the pull request, the other approves it. They can't release, and a change to a file in CODEOWNERS still needs its owner. They can push branches other than `main` and `v5` and run workflows on them, which is why releasing goes through the `release` environment.
+- **Committers** are the members of the `committers` team, which has Write access. An approval only counts from someone with Write access, so two committers can land a change between them: one opens the pull request, the other approves it. They can't release unless they're also in `releasers`, and a change to a file in CODEOWNERS still needs its owner. They can push branches other than `main` and `v5` and run workflows on them, which is why releasing goes through the `release` environment.
+- **Releasers** are the members of the `releasers` team, who are committers as well. They can push a release tag. A tag can point at any commit, and the release builds whatever it points at, with the `release.yml` of that commit, so the person who pushes the tag decides what's published. Tag only a commit that's on `main`.
 - **Moderators** have the Triage role on the repo, given under Settings → Collaborators and teams. They label, close and reopen issues and pull requests, mark duplicates, hide comments, lock conversations and moderate Discussions. They can't push or merge, and their approval doesn't count. Blocking a user from the org takes an admin.
 - **Admins bypass the `main` rule.** While there is one maintainer, that is how their own changes land, since nobody else could approve them.
 - **Pull requests from forks** run `check.yml` with a read-only token and no secrets. A first-time contributor's run waits for a maintainer's approval.

@@ -15,9 +15,10 @@ permissions:
 jobs:
   goreleaser:
     runs-on: ubuntu-latest
-    # Only v* tags, which only admins can push, can run in this environment.
-    # npm's trusted publishers require it, and the Discord webhook is its
-    # secret, so a workflow on another branch can't publish or post.
+    # Only v* tags, which only admins and the releasers team can push, can run
+    # in this environment. npm's trusted publishers require it, and the Discord
+    # webhook is its secret, so a workflow on another branch can't publish or
+    # post.
     environment: release
     steps:
       - name: Checkout
