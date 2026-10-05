@@ -21,6 +21,16 @@ Reply in Markdown, in exactly this shape:
 
 One to three sentences on what the change does.
 
+### Version
+
+The version bump the change needs, `patch`, `minor` or `major`, in backticks, then why in one sentence:
+
+- `major`: it breaks a config or app that works today. It removes or renames a component, arg, output, CLI command or flag, changes a default, or replaces or deletes a user's existing resources when they update.
+- `minor`: it adds something users can use, without breaking anything: a component, arg, output, `nodes` member, CLI command or flag, or SDK function.
+- `patch`: anything else, such as a fix, docs, tests, workflows, or a change users can't call. A fix that makes the code do what its docs already say is a `patch`.
+
+A pull request gets the highest one that applies.
+
 ### Findings
 
 A list of what the author should change, blocking findings first. Each item starts with `[blocking]` or `[suggestion]`, then the file and line, like `path/to/file.ts:42`, then what to change and why, in a sentence or two. If there's nothing to change, write "None." Don't write a verdict: whether the pull request needs changes is worked out from the tags.

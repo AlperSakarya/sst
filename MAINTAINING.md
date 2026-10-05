@@ -25,7 +25,7 @@ Never run `git push --tags` or `git push --mirror`. A pushed `vX.Y.Z` tag is a r
 
 ## Merging an SST release
 
-`.github/workflows/upstream.yml` runs every Monday. When SST's newest release isn't merged into `main`, it opens an issue titled "Upstream release vX.Y.Z" with the releases and commits involved, the files that conflict, the next free fork version, and the commands. Closing the issue skips that release. To run it by hand:
+`.github/workflows/upstream.yml` runs every Monday. When SST's newest release isn't merged into `main`, it opens an issue titled "Upstream release vX.Y.Z" with the releases and commits involved, the files that conflict, the next fork version, and the commands. Closing the issue skips that release. To run it by hand:
 
 ```bash
 gh workflow run upstream.yml --repo sst-community/sst
@@ -61,21 +61,25 @@ The fork also edits `www/config.ts` (`fork`, `forkDiscord`), the Head, Header, H
 
 ## Versions
 
-The major and minor numbers are those of the SST release the fork is built on. The patch number is the fork's own counter: always the next free one in that line.
+The fork numbers its own releases, with semver, because it moves faster than SST. Up to 4.17.2 the numbers followed SST's. From here they're the fork's own, so the fork's 4.18.0 won't be SST's 4.18.0. Each release says which SST release it's built on.
 
-| What happened | Version |
+| What's in the release | Version |
 |---|---|
-| First release, on SST 4.17.1 | `4.17.2` |
-| A fix in the fork | The next patch |
-| SST releases `4.17.2`, a number the fork has used | The next free patch |
-| SST releases `4.18.0` | `4.18.0`, or the next free `4.18.x` |
+| Only fixes and changes users can't call, from the fork or a merged SST patch release | The next patch |
+| Something new users can use (a component, arg, output, `nodes` member, CLI command or flag, or SDK function), or a merged SST minor release | The next minor |
+| A breaking change | `main` doesn't take them for now |
 
-Use plain `X.Y.Z`. A suffix such as `4.17.1-community.1` fails every `version` rule in a user's `sst.config.ts`, and npm ignores `+build` metadata. Nothing compares the CLI's version with SST's, so the numbers only have to be free and in order.
+- Count up from the fork's newest release on `main`. Never reuse a number or go back.
+- **`.github/scripts/next-version.sh` works it out.** Run it on an up-to-date `main`. It takes the highest `semver:` label of the pull requests merged since the last release, and the SST release merged since then, if any. It lists what it didn't count: pull requests without the label, and commits pushed straight to `main`. Check those by hand.
+- **The automatic review sets the `semver:` label** on each pull request (see [Who can merge and release](#who-can-merge-and-release)). Correct it before merging when it's wrong.
+- **`sst version` names the SST release**, as `sst 4.18.0 (sst-community, built on SST 4.17.1)`. `release.yml` finds the newest SST tag in the release's history and `.goreleaser.yml` passes it in as `ui.Upstream`. Release notes name it too.
+- Use plain `X.Y.Z`. A suffix such as `4.17.1-community.1` fails every `version` rule in a user's `sst.config.ts`, and npm ignores `+build` metadata. Nothing compares the CLI's version with SST's, so the fork's numbers don't have to match SST's.
 
 ## Releasing
 
-1. Write `.github/release-notes/vX.Y.Z.md`. Name the SST release it includes. Keep `### Install` as the last section: the Discord post leaves out everything from that heading on.
-2. Push the `vX.Y.Z` tag on a commit that's on `main`. Only an admin or a member of the `releasers` team can.
+1. Run `.github/scripts/next-version.sh` on an up-to-date `main` for the version (see [Versions](#versions)).
+2. Write `.github/release-notes/vX.Y.Z.md`. Name the SST release it includes. Keep `### Install` as the last section: the Discord post leaves out everything from that heading on.
+3. Push the `vX.Y.Z` tag on a commit that's on `main`. Only an admin or a member of the `releasers` team can.
 
 `release.yml` then:
 
@@ -94,7 +98,7 @@ Things to know:
 - **The container image has to be public.** GitHub may create the `sst/bridge-task` package as private on its first push. Until it's public, `sst dev` can't start a Task.
 - **The environment doesn't cover the image.** A workflow on any branch can push `bridge-task:latest` with its own `GITHUB_TOKEN`, and `sst dev` runs whatever that tag points at. Every committer is a releaser today, so this gives nobody more than a release tag already does. Before adding a committer who isn't a releaser, have the release build the CLI with the digest of the image it pushed, so that a later push to the tag can't change what a released CLI runs.
 - **The Discord webhook** is the `DISCORD_WEBHOOK_URL` secret of the `release` environment. Without it the step is skipped. `.github/scripts/announce-release.sh` is the script.
-- **Fork builds are labelled.** `.goreleaser.yml` sets `ui.Distribution=sst-community`, which `sst version` and the `sst dev` banner show. Keep it out of `main.version`.
+- **Fork builds are labelled.** `.goreleaser.yml` sets `ui.Distribution=sst-community`, which `sst version` and the `sst dev` banner show, and `ui.Upstream` to the SST release the build is on, which `sst version` shows. Keep both out of `main.version`.
 
 ## Building it yourself
 
@@ -133,8 +137,9 @@ Also:
   - a `risk: low`, `risk: medium` or `risk: high` label, from the paths changed (`.github/scripts/review-prepare.sh` has the rules)
   - checks that don't need a model: the title, no edits to generated docs, no version changes, and a description that says how a change to code was tested
   - a review by opencode with a free model (`MODEL` in the workflow), following `.github/review/prompt.md`
+  - a `semver: patch`, `semver: minor` or `semver: major` label, from the review's Version section. A run whose review has no version leaves the label as it was.
 
-  It sets a `review` status: failure when a check fails or the review tags a finding `[blocking]`. The prompt lists what counts as blocking (bugs, security, docs made wrong, a doc comment not updated, replaced resources); everything else is a `[suggestion]`, and the script, not the model, turns the tags into the status, so the verdict holds steady between runs. A finding that depends on what AWS or another outside service accepts is a `[suggestion]` too, since the model can't read their docs. The model runs at temperature 0, as the `review` agent in `opencode.json`, with 60 tool calls (`steps`). A review that runs out of them before it writes its findings says so, with what it did write folded away, and nothing in it counts. Pick up the pull requests where it passes, or where the author has answered it. The status isn't required, so you can merge over it when the review is wrong. If the free model is down or its free period ends, the comment says so and the checks still run; change `MODEL` to another free model (`opencode models opencode` lists them).
+  It sets a `review` status: failure when a check fails, the review tags a finding `[blocking]`, or the version is `major`, since `main` doesn't take breaking changes for now. The prompt lists what counts as blocking (bugs, security, docs made wrong, a doc comment not updated, replaced resources); everything else is a `[suggestion]`, and the script, not the model, turns the tags into the status, so the verdict holds steady between runs. A finding that depends on what AWS or another outside service accepts is a `[suggestion]` too, since the model can't read their docs. The model runs at temperature 0, as the `review` agent in `opencode.json`, with 60 tool calls (`steps`). A review that runs out of them before it writes its findings says so, with what it did write folded away, and nothing in it counts. Pick up the pull requests where it passes, or where the author has answered it. The status isn't required, so you can merge over it when the review is wrong. If the free model is down or its free period ends, the comment says so and the checks still run; change `MODEL` to another free model (`opencode models opencode` lists them).
 - **The automatic review is safe for forks because nothing from the pull request runs.** It uses `pull_request_target`, which runs the workflow from `main` with a token that can comment. It checks out `main` only, fetches the diff as text, and gives opencode no token and no tools but reading files (`.github/review/opencode.json`). Never make it check out or run the pull request's code.
 - **Merge methods:** squash for a contributor's pull request, a merge commit for an SST release. Rebase-merge is off.
 - **Committers** are the members of the `committers` team, which has Write access and owns every file in CODEOWNERS. Two committers can land a change between them: one opens the pull request, the other approves it. They can't release unless they're also in `releasers`, and a change to a file in CODEOWNERS still needs its owner. They can push branches other than `main` and `v5` and run workflows on them, which is why releasing goes through the `release` environment.
