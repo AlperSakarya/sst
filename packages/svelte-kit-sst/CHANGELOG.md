@@ -1,5 +1,13 @@
 # svelte-kit-sst
 
+## 3.0.0
+
+The first release as `@sst-community/svelte-kit-sst`, from the sst-community fork.
+
+- Works with SvelteKit 3 as well as 2. On SvelteKit 3 the server is built with `builder.generateServerInstance`; SvelteKit 2 behaves as before, Node polyfills included.
+- A route that uses `read` from `$app/server` fails the build with a clear message, since client assets are served from S3 and aren't in the function.
+- Install it as `svelte-kit-sst@npm:@sst-community/svelte-kit-sst`, so `import adapter from "svelte-kit-sst"` keeps working.
+
 ## 2.44.0
 
 ## 2.43.8

@@ -121,6 +121,24 @@ jobs:
         env:
           NPM_CONFIG_PROVENANCE: true
 
+      # Publishes packages/svelte-kit-sst when its version isn't on npm yet, so
+      # a pull request that bumps the version ships with the next release. Its
+      # tests run in the svelte-kit-sst workflow, not here.
+      - name: Release svelte-kit-sst
+        working-directory: packages/svelte-kit-sst
+        run: |
+          version=$(node -p "require('./package.json').version")
+          if npm view "@sst-community/svelte-kit-sst@$version" version >/dev/null 2>&1; then
+            echo "@sst-community/svelte-kit-sst@$version is already on npm"
+            exit 0
+          fi
+          tag=latest
+          case "$version" in *-*) tag=next ;; esac
+          npm ci
+          npm publish --access public --tag "$tag"
+        env:
+          NPM_CONFIG_PROVENANCE: true
+
       # Posts the release notes to the Discord announcements channel. It's
       # skipped while the DISCORD_WEBHOOK_URL secret isn't set.
       - name: Announce on Discord
