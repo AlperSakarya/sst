@@ -102,7 +102,7 @@ func CmdMosaic(c *cli.Cli) error {
 				if err != nil {
 					return err
 				}
-				if _, ok := nextEnv.Env["AWS_ACCESS_KEY_ID"]; ok && timeout != time.Minute*45 {
+				if accessKeyID := nextEnv.Env["AWS_ACCESS_KEY_ID"]; accessKeyID != "" && timeout != time.Minute*45 {
 					timeout = time.Minute * 45
 					if !timer.Stop() {
 						select {
