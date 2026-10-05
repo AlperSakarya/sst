@@ -120,7 +120,7 @@ go build -ldflags "-X main.version=<version> -X github.com/sst/sst/v3/cmd/sst/mo
 
 ## Who can merge and release
 
-Three rulesets on the repo set this. Admins bypass the first two, and the `releasers` team bypasses the first.
+Three rulesets on the repo set this. Admins bypass the first two. The `releasers` team bypasses the first, and the second when they merge a pull request.
 
 - **`Release tags`:** only an admin or a member of `releasers` can create, move or delete a `v*` tag.
 - **`main`:** a change needs a pull request, an approval from someone other than its author, and a passing `check` run. The approval has to cover the latest push. Force-pushes and deletion are blocked. An admin pushes a merge of an SST release directly.
@@ -128,13 +128,13 @@ Three rulesets on the repo set this. Admins bypass the first two, and the `relea
 
 Also:
 
-- **`.github/CODEOWNERS`** makes the `committers` team the owner of every file, so every pull request needs a committer's approval. Below that, it lists the files that decide what's built, released and run when the package is installed; a pull request that touches one needs its owner's review instead. When you add such a file, add it there, and to the "Code owner files" check in `.coderabbit.yaml`.
+- **`.github/CODEOWNERS`** makes the `committers` team the owner of every file, so every pull request needs a committer's approval, unless an admin or a releaser merges it. Below that, it lists the files that decide what's built, released and run when the package is installed; a pull request that touches one needs its owner's review instead. When you add such a file, add it there, and to the "Code owner files" check in `.coderabbit.yaml`.
 - **CodeRabbit reviews first.** It reviews every pull request to `main`, not `v5`, with the rules in `.coderabbit.yaml`, labels it `risk: low`, `risk: medium` or `risk: high`, and asks the author for changes. It approves once its comments are resolved and none of its blocking checks fail. The app has write access, so GitHub counts its approval toward the one `main` needs, but it isn't a code owner, so a committer still has to approve. Pick up the pull requests it has approved and review them as usual. The author can't waive a failing check or approve with `@coderabbitai approve`; a member can.
 - **Merge methods:** squash for a contributor's pull request, a merge commit for an SST release. Rebase-merge is off.
 - **Committers** are the members of the `committers` team, which has Write access and owns every file in CODEOWNERS. Two committers can land a change between them: one opens the pull request, the other approves it. They can't release unless they're also in `releasers`, and a change to a file in CODEOWNERS still needs its owner. They can push branches other than `main` and `v5` and run workflows on them, which is why releasing goes through the `release` environment.
 - **Releasers** are the members of the `releasers` team, who are committers as well. They can push a release tag. A tag can point at any commit, and the release builds whatever it points at, with the `release.yml` of that commit, so the person who pushes the tag decides what's published. Tag only a commit that's on `main`.
 - **Moderators** have the Triage role on the repo, given under Settings → Collaborators and teams. They label, close and reopen issues and pull requests, mark duplicates, hide comments, lock conversations and moderate Discussions. They can't push or merge, and their approval doesn't count. Blocking a user from the org takes an admin.
-- **Admins bypass the `main` rule.** While there is one maintainer, that is how their own changes land, since nobody else could approve them.
+- **Admins and releasers bypass the `main` rule.** A releaser can merge a pull request without an approval, their own included, but can't push to `main` directly. An admin can do both, which is how an SST release merge lands.
 - **Pull requests from forks** run `check.yml` with a read-only token and no secrets. A first-time contributor's run waits for a maintainer's approval.
 
 ## Issues, ideas and votes
