@@ -13,7 +13,7 @@ Review the change the way a careful maintainer would, and look for:
 - Docs (`www/`): links work under the site's `/sst` base; install commands use the fork (`@sst-community/sst`, or `sst` aliased to it), not SST's `sst` package.
 - Whether the pull request does one thing. Unrelated changes belong in separate pull requests.
 
-Don't repeat the automatic checks in `pr.md`; they're reported separately. Don't comment on style that matches the surrounding code. Don't praise. If you're not sure something is a problem, say what you'd check rather than asserting it.
+Don't repeat the automatic checks in `pr.md`; they're reported separately. Review the change, not `pr.md` or `pr.diff` themselves: the workflow builds them, so their format isn't the author's to fix. Refer to the description as "the description", not by a line of `pr.md`. Don't comment on style that matches the surrounding code. Don't praise. If you're not sure something is a problem, say what you'd check rather than asserting it.
 
 Reply in Markdown, in exactly this shape:
 
@@ -23,10 +23,14 @@ One to three sentences on what the change does.
 
 ### Findings
 
-A list of what the author should change, most important first. Each item starts with the file and line, like `path/to/file.ts:42`, then what to change and why, in a sentence or two. If there's nothing to change, write "None."
+A list of what the author should change, blocking findings first. Each item starts with `[blocking]` or `[suggestion]`, then the file and line, like `path/to/file.ts:42`, then what to change and why, in a sentence or two. If there's nothing to change, write "None." Don't write a verdict: whether the pull request needs changes is worked out from the tags.
 
-### Verdict
+A finding is `[blocking]` only if it is one of these:
 
-VERDICT: approve
+1. A bug: the change does the wrong thing, can crash or fail, or breaks something that works today.
+2. A security problem.
+3. A component arg, default or behavior that changes without its doc comment changing too.
+4. A change that would replace or delete a user's existing resources when they update, and the description doesn't say so.
+5. Docs or comments that are now wrong: a broken link, a command or code that doesn't work, or a statement the change makes untrue.
 
-Use `VERDICT: changes` instead if any finding should be fixed before a maintainer reviews the pull request. Use `VERDICT: approve` if the findings are minor or there are none.
+Everything else is `[suggestion]`: wording, duplication, naming, style, missing tests, refactors, optional improvements, and anything you aren't sure is a problem. When a finding could be either, it's a `[suggestion]`.

@@ -12,27 +12,32 @@ risk=$(cat "$OUT/risk")
 failed=$(cat "$OUT/failed")
 
 # The model's review, from its Summary heading on. Colors are stripped and
-# mentions broken, so the text can't ping anyone.
+# mentions broken, so the text can't ping anyone. The model tags each finding
+# [blocking] or [suggestion]; the verdict is worked out here from the tags,
+# which varies less between runs than asking the model for one.
 review=""
-verdict=""
+blocking=""
 if [ "${OPENCODE_OUTCOME:-}" = success ] && [ -s "$OUT/review.raw" ]; then
   review=$(perl -CS -pe 's/\e\[[0-9;]*m//g; s/@(?=\w)/@\x{200B}/g' <"$OUT/review.raw" |
     awk '/^#+ *Summary/{on=1} on' | head -c 50000)
-  verdict=$(grep -Eio 'VERDICT:[[:space:]]*`?(approve|changes)' <<<"$review" | tail -1 | grep -Eio 'approve|changes' | tr 'A-Z' 'a-z' || true)
+  if grep -Eq '^#+ *Findings' <<<"$review"; then
+    blocking=$(awk '/^#+ *Findings/{on=1; next} /^#/{on=0} on' <<<"$review" |
+      grep -Eic '^[[:space:]]*([-*]|[0-9]+\.)[[:space:]]*[*_`]*\[blocking\]' || true)
+  fi
 fi
 
 if [ "$failed" -gt 0 ]; then
   state=failure
   description="$failed check(s) failed. See the review comment."
-elif [ "$verdict" = changes ]; then
+elif [ -n "$blocking" ] && [ "$blocking" -gt 0 ]; then
   state=failure
-  description="The review asks for changes. See the review comment."
+  description="The review has $blocking blocking finding(s). See the review comment."
 elif [ -z "$review" ]; then
   state=success
   description="Checks passed. The AI review didn't run."
-elif [ -z "$verdict" ]; then
+elif [ -z "$blocking" ]; then
   state=success
-  description="Checks passed. The review gave no verdict; read it."
+  description="Checks passed. The review's findings couldn't be read; read it."
 else
   state=success
   description="Checks passed, and the review has no blocking findings."
@@ -43,7 +48,7 @@ fi
   echo "## Automatic review"
   echo
   if [ "$state" = failure ]; then
-    echo "**Before a committer reviews this, please fix the ❌ checks and the findings below**, or reply if you disagree. Pushing a fix runs this again."
+    echo "**Before a committer reviews this, please fix the ❌ checks and the \`[blocking]\` findings below**, or reply if you disagree. Pushing a fix runs this again."
     echo
   fi
   echo "**Risk:** $(cat "$OUT/risk.md")"

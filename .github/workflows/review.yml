@@ -57,7 +57,7 @@ jobs:
         continue-on-error: true
         timeout-minutes: 15
         run: |
-          npx -y opencode-ai@1.18.34 run --pure --model "$MODEL" \
+          npx -y opencode-ai@1.18.34 run --pure --agent review --model "$MODEL" \
             -f "$OUT/pr.md" -f "$OUT/pr.diff" -- "$(cat .github/review/prompt.md)" \
             </dev/null >"$OUT/review.raw"
         env:

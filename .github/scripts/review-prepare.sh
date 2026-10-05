@@ -21,7 +21,7 @@ files=$(gh api --paginate "repos/$GH_REPO/pulls/$PR/files")
 
 # The diff, from each file's patch. GitHub leaves out the patch of a binary or
 # very large file.
-jq -r '.[] | "diff --git a/\(.previous_filename // .filename) b/\(.filename)\n# \(.status)\n\(.patch // "(no diff shown: binary or too large)")"' <<<"$files" >"$OUT/pr.full.diff"
+jq -r '.[] | "diff --git a/\(.previous_filename // .filename) b/\(.filename)\n\(.patch // "(no diff shown: binary or too large)")"' <<<"$files" >"$OUT/pr.full.diff"
 head -c 100000 "$OUT/pr.full.diff" >"$OUT/pr.diff"
 if [ "$(wc -c <"$OUT/pr.full.diff")" -gt 100000 ]; then
   printf '\n\n(The diff is cut here: it is over 100 KB.)\n' >>"$OUT/pr.diff"
