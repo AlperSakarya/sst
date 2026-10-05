@@ -34,7 +34,7 @@
       "description": "Reviews a pull request. Reads files, writes text, nothing else.",
       "mode": "primary",
       "temperature": 0,
-      "steps": 25,
+      "steps": 60,
       "permission": {
         "read": "allow",
         "glob": "allow",
