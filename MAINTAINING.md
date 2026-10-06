@@ -78,8 +78,9 @@ The fork numbers its own releases, with semver, because it moves faster than SST
 ## Releasing
 
 1. Run `.github/scripts/next-version.sh` on an up-to-date `main` for the version (see [Versions](#versions)).
-2. Write `.github/release-notes/vX.Y.Z.md`. Name the SST release it includes. Keep `### Install` as the last section: the Discord post leaves out everything from that heading on.
-3. Push the `vX.Y.Z` tag on a commit that's on `main`. Only an admin or a member of the `releasers` team can.
+2. Write `.github/release-notes/vX.Y.Z.md`. Name the SST release it includes, and link each pull request users would notice. Keep `### Install` as the last section: the Discord post leaves out everything from that heading on.
+3. Run `next-version.sh` again. It lists the pull requests in the release that the notes don't link.
+4. Push the `vX.Y.Z` tag on a commit that's on `main`. Only an admin or a member of the `releasers` team can.
 
 `release.yml` then:
 

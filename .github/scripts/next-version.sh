@@ -11,6 +11,9 @@
 # patch a patch. A pull request without the label, or a commit pushed straight
 # to main, isn't counted: they're listed, to check by hand.
 #
+# Once .github/release-notes/<version>.md is written, run it again: it lists
+# the pull requests merged since the release that the notes don't link.
+#
 # REF      what would be released (default HEAD)
 # GH_REPO  the repo to read pull requests from (default sst-community/sst)
 set -euo pipefail
@@ -64,6 +67,7 @@ prs=$(gh pr list --base main --state merged --search "merged:>=$since" --limit 2
 echo
 echo "Pull requests merged since $release:"
 listed=false
+merged=""
 # Fields are split on the unit separator: tabs would collapse an empty label.
 while IFS=$'\x1f' read -r number oid semver title; do
   [ -n "$number" ] || continue
@@ -75,6 +79,7 @@ while IFS=$'\x1f' read -r number oid semver title; do
   git merge-base --is-ancestor "$oid" "$release" && continue
   git merge-base --is-ancestor "$oid" "$REF" || continue
   listed=true
+  merged+="$number"$'\x1f'"$title"$'\n'
   if [ -n "$semver" ]; then
     printf '  %-6s #%s %s\n' "$semver" "$number" "$title"
     bump "$semver"
@@ -105,4 +110,26 @@ echo
 echo "Next version: $next ($level)"
 if [ "$level" = major ]; then
   echo "A breaking change is in. main doesn't take breaking changes for now: sort that out before releasing."
+fi
+
+# The release notes are written by hand, so check that they link every pull
+# request in the release, as [#123] or a link to its page.
+notes=".github/release-notes/$next.md"
+echo
+if [ ! -f "$notes" ]; then
+  echo "Write $notes, then run this again to check that it links every pull request."
+  exit 0
+fi
+missing=""
+while IFS=$'\x1f' read -r number title; do
+  [ -n "$number" ] || continue
+  if ! grep -Eq "\[#$number\]|sst-community/sst/pull/$number([^0-9]|$)" "$notes"; then
+    missing+="  #$number $title"$'\n'
+  fi
+done <<<"$merged"
+if [ -n "$missing" ]; then
+  echo "$notes doesn't link these pull requests. Add them, or leave out what users don't need to know:"
+  printf '%s' "$missing"
+else
+  echo "$notes links every pull request merged since $release."
 fi
