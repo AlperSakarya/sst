@@ -39,23 +39,11 @@ func Upgrade(existingVersion string, nextVersion string) (string, error) {
 		return "", fmt.Errorf("unsupported architecture")
 	}
 	if nextVersion == "" {
-		resp, err := http.Get("https://api.github.com/repos/" + ReleaseRepo + "/releases/latest")
+		next, err := newestRelease(existingVersion)
 		if err != nil {
 			return "", err
 		}
-		defer resp.Body.Close()
-
-		if resp.StatusCode != http.StatusOK {
-			return "", err
-		}
-
-		var releaseInfo struct {
-			TagName string `json:"tag_name"`
-		}
-		if err := json.NewDecoder(resp.Body).Decode(&releaseInfo); err != nil {
-			return "", err
-		}
-		nextVersion = releaseInfo.TagName
+		nextVersion = next
 	}
 	if !strings.HasPrefix(nextVersion, "v") {
 		nextVersion = "v" + nextVersion
@@ -107,15 +95,56 @@ func Upgrade(existingVersion string, nextVersion string) (string, error) {
 	return nextVersion, nil
 }
 
+// The newest release in the same major version as the one installed. A build
+// that isn't a release gets the latest release.
+func newestRelease(existingVersion string) (string, error) {
+	get := func(path string, into any) error {
+		resp, err := http.Get("https://api.github.com/repos/" + ReleaseRepo + path)
+		if err != nil {
+			return err
+		}
+		defer resp.Body.Close()
+		if resp.StatusCode != http.StatusOK {
+			return fmt.Errorf("unexpected HTTP status when finding the release: %s", resp.Status)
+		}
+		return json.NewDecoder(resp.Body).Decode(into)
+	}
+
+	var releases []struct {
+		TagName string `json:"tag_name"`
+		Draft   bool   `json:"draft"`
+	}
+	if err := get("/releases?per_page=100", &releases); err != nil {
+		return "", err
+	}
+	tags := []string{}
+	for _, release := range releases {
+		if !release.Draft {
+			tags = append(tags, release.TagName)
+		}
+	}
+	newest, ok, err := npm.NewestInMajor(existingVersion, tags)
+	if ok {
+		return newest, err
+	}
+
+	var latest struct {
+		TagName string `json:"tag_name"`
+	}
+	if err := get("/releases/latest", &latest); err != nil {
+		return "", err
+	}
+	return latest.TagName, nil
+}
+
 func UpgradeNode(existingVersion string, nextVersion string) (map[string]string, error) {
 	result := make(map[string]string)
 	if nextVersion == "" {
-		registry := npm.LoadRegistry()
-		pkg, err := npm.Get(registry, NPMPackage, "latest")
+		next, err := npm.Newest(npm.LoadRegistry(), NPMPackage, existingVersion)
 		if err != nil {
 			return result, err
 		}
-		nextVersion = pkg.Version
+		nextVersion = next
 	}
 
 	files, err := filepath.Glob("**/*/package.json")

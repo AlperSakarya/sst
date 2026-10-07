@@ -64,7 +64,7 @@ type preset struct {
 var ErrConfigExists = fmt.Errorf("sst.config.ts already exists")
 var ErrPackageJsonInvalid = fmt.Errorf("package.json is invalid")
 
-func Create(templateName string, home string) ([]string, error) {
+func Create(templateName string, home string, cliVersion string) ([]string, error) {
 	gitignoreSteps := []gitignoreStep{
 		{
 			Name: "# sst",
@@ -151,6 +151,15 @@ func Create(templateName string, home string) ([]string, error) {
 				pkgName = mapped
 			}
 			version := npmStep.Version
+			if version == "" && pkgName == global.NPMPackage {
+				// The newest in the CLI's own major version, which is what its
+				// platform was written for
+				slog.Info("fetching newest version", "package", pkgName, "cli", cliVersion)
+				version, err = npm.Newest(npm.LoadRegistry(), pkgName, cliVersion)
+				if err != nil {
+					return nil, err
+				}
+			}
 			if version == "" {
 				slog.Info("fetching latest version", "package", pkgName)
 				registry := npm.LoadRegistry()
