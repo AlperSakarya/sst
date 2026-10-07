@@ -67,7 +67,8 @@ The fork numbers its own releases, with semver, because it moves faster than SST
 |---|---|
 | Only fixes and changes users can't call, from the fork or a merged SST patch release | The next patch |
 | Something new users can use (a component, arg, output, `nodes` member, CLI command or flag, or SDK function), or a merged SST minor release | The next minor |
-| A breaking change | `main` doesn't take them for now |
+| A new minimum requirement: a newer Node.js, Bun, Go or Python, a newer Pulumi or provider, a newer framework version, or a permission the deploy role didn't need before | The next minor, listed first in the release notes, under Breaking changes |
+| Any other breaking change: an arg, output, component or CLI flag removed or renamed, a default changed, or existing resources replaced | `main` doesn't take them for now |
 
 - Count up from the fork's newest release on `main`. Never reuse a number or go back.
 - **`.github/scripts/next-version.sh` works it out.** Run it on an up-to-date `main`. It takes the highest `semver:` label of the pull requests merged since the last release, and the SST release merged since then, if any. It lists what it didn't count: pull requests without the label, and commits pushed straight to `main`. Check those by hand.
@@ -78,7 +79,7 @@ The fork numbers its own releases, with semver, because it moves faster than SST
 ## Releasing
 
 1. Run `.github/scripts/next-version.sh` on an up-to-date `main` for the version (see [Versions](#versions)).
-2. Write `.github/release-notes/vX.Y.Z.md`, starting from the lines `next-version.sh` prints from the automatic review's drafts. Name the SST release it includes, and link each pull request users would notice. Keep `### Install` as the last section: the Discord post leaves out everything from that heading on.
+2. Write `.github/release-notes/vX.Y.Z.md`, starting from the lines `next-version.sh` prints from the automatic review's drafts. Name the SST release it includes, and link each pull request users would notice. **If anything changes what users need** (a pull request labelled `breaking`, or a new minimum requirement in a merged SST release), the notes open with a `### ⚠️ Breaking changes` section, before Fixes, and each item says what users have to do. It's first so it's what the GitHub release, the Discord post and anyone skimming see first. Keep `### Install` as the last section: the Discord post leaves out everything from that heading on.
 3. Run `next-version.sh` again. It lists the pull requests in the release that the notes don't link.
 4. Push the `vX.Y.Z` tag on a commit that's on `main`. Only an admin or a member of the `releasers` team can.
 
@@ -173,7 +174,7 @@ Also:
   - checks that don't need a model: the title, no edits to generated docs, no version changes, and a description that says how a change to code was tested
   - a review by opencode with a free model (`MODEL` in the workflow), following `.github/review/prompt.md`
   - a `semver: patch`, `semver: minor` or `semver: major` label, from the review's Version section. A run whose review has no version leaves the label as it was.
-  - a drafted line for the release notes, which `next-version.sh` prints at release time
+  - a drafted line for the release notes, which `next-version.sh` prints at release time. A change that alters what users need, such as a new minimum requirement, starts with "Breaking:" and gets a `breaking` label. Add or remove the label by hand when the review gets it wrong: `next-version.sh` goes by the label.
   - for a pull request that carries a fix from SST, whether SST's pull request is still open or merged. Once SST merges it, the fix comes with SST's next release, so the fork's copy may not be needed.
 
   The comment opens with a table (result, risk, version, checks, and upstream when there is one) and puts blocking findings above suggestions, each linked to its line. `.github/scripts/review-comment.py` builds it from the model's output; `review-post.sh` posts it, sets the labels and the status.

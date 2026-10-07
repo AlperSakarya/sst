@@ -4,8 +4,9 @@ files review-prepare.sh wrote and opencode's output. review-post.sh posts it.
 
 Reads, in $OUT: risk, risk.md, failed, checks.md, files, upstream.md, and
 review.raw, opencode's output, used only when OPENCODE_OUTCOME is "success".
-Writes, in $OUT: comment.md, state, description, and version (patch, minor,
-major, or empty when the review gave none).
+Writes, in $OUT: comment.md, state, description, version (patch, minor,
+major, or empty when the review gave none), and breaking (yes, no, or empty
+when the review gave no release note).
 
 Needs OUT, GH_REPO, SHA, MODEL and RUN_URL. Run it from the repo root: a
 `path:line` in a finding becomes a link only when the file exists.
@@ -92,6 +93,10 @@ has_note = any(key.startswith("release note") for key in sections)
 note = section("release note")
 if re.match(r"^[*_]*none\b", note, re.I):
     note = ""
+# A change that breaks something for someone who upgrades, including a new
+# minimum requirement, starts its note with "Breaking:". The release notes put
+# those first, and next-version.sh checks they do.
+breaking = bool(re.match(r"^[*_]*breaking\b", note, re.I))
 
 
 # Each finding is a list item tagged [blocking] or [suggestion]. The verdict
@@ -183,6 +188,12 @@ if version == "major":
         "> **This looks like a breaking change**, and `main` doesn't take breaking changes for now. The blocking findings say what breaks. If it isn't one, reply saying why, and a committer decides.",
         "",
     ]
+if breaking and version != "major":
+    out += [
+        "> [!WARNING]",
+        "> **This changes what users need**, so the release notes will list it under Breaking changes. Check that the drafted release note below says what they have to do.",
+        "",
+    ]
 out += ["| | |", "|---|---|", f"| **Result** | {result} |", f"| **Risk** | {risk_icon} {risk} · {cell(risk_why)} |"]
 if version:
     out.append(f"| **Version** | `{version}`" + (f" · {cell(version_why)}" if version_why else "") + " |")
@@ -202,7 +213,8 @@ if finished:
     if suggestions:
         out += [f"### 💡 Suggestions ({len(suggestions)})", ""] + [f"- {text}" for text in suggestions] + [""]
     if has_note:
-        out += ["### Release note (draft)", "", note or "_None: users won't notice this change._", ""]
+        heading = "### Release note (draft) ⚠️ breaking" if breaking else "### Release note (draft)"
+        out += [heading, "", note or "_None: users won't notice this change._", ""]
 elif RAN:
     out += ["> [!NOTE]", f"> The AI review ran out of steps before it finished ([run]({RUN_URL})). The checks above still apply.", ""]
     if raw.strip():
@@ -220,3 +232,4 @@ out.append(
 (OUT / "state").write_text(state + "\n")
 (OUT / "description").write_text(description + "\n")
 (OUT / "version").write_text(version + "\n")
+(OUT / "breaking").write_text(("yes" if breaking else "no" if has_note else "") + "\n")
