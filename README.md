@@ -45,6 +45,7 @@ Download the pre-compiled binaries from the [releases](https://github.com/sst-co
 Get started with your favorite framework:
 
 - [Next.js](https://sst-community.github.io/sst/docs/start/aws/nextjs)
+- [SvelteKit](https://sst-community.github.io/sst/docs/start/aws/svelte/)
 - [Remix](https://sst-community.github.io/sst/docs/start/aws/remix)
 - [Astro](https://sst-community.github.io/sst/docs/start/aws/astro)
 - [Hono](https://sst-community.github.io/sst/docs/start/aws/hono)
