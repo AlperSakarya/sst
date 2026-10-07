@@ -78,7 +78,7 @@ The fork numbers its own releases, with semver, because it moves faster than SST
 ## Releasing
 
 1. Run `.github/scripts/next-version.sh` on an up-to-date `main` for the version (see [Versions](#versions)).
-2. Write `.github/release-notes/vX.Y.Z.md`. Name the SST release it includes, and link each pull request users would notice. Keep `### Install` as the last section: the Discord post leaves out everything from that heading on.
+2. Write `.github/release-notes/vX.Y.Z.md`, starting from the lines `next-version.sh` prints from the automatic review's drafts. Name the SST release it includes, and link each pull request users would notice. Keep `### Install` as the last section: the Discord post leaves out everything from that heading on.
 3. Run `next-version.sh` again. It lists the pull requests in the release that the notes don't link.
 4. Push the `vX.Y.Z` tag on a commit that's on `main`. Only an admin or a member of the `releasers` team can.
 
@@ -173,6 +173,10 @@ Also:
   - checks that don't need a model: the title, no edits to generated docs, no version changes, and a description that says how a change to code was tested
   - a review by opencode with a free model (`MODEL` in the workflow), following `.github/review/prompt.md`
   - a `semver: patch`, `semver: minor` or `semver: major` label, from the review's Version section. A run whose review has no version leaves the label as it was.
+  - a drafted line for the release notes, which `next-version.sh` prints at release time
+  - for a pull request that carries a fix from SST, whether SST's pull request is still open or merged. Once SST merges it, the fix comes with SST's next release, so the fork's copy may not be needed.
+
+  The comment opens with a table (result, risk, version, checks, and upstream when there is one) and puts blocking findings above suggestions, each linked to its line. `.github/scripts/review-comment.py` builds it from the model's output; `review-post.sh` posts it, sets the labels and the status.
 
   It sets a `review` status: failure when a check fails, the review tags a finding `[blocking]`, or the version is `major`, since `main` doesn't take breaking changes for now. The prompt lists what counts as blocking (bugs, security, docs made wrong, a doc comment not updated, replaced resources); everything else is a `[suggestion]`, and the script, not the model, turns the tags into the status, so the verdict holds steady between runs. A finding that depends on what AWS or another outside service accepts is a `[suggestion]` too, since the model can't read their docs. The model runs at temperature 0, as the `review` agent in `opencode.json`, with 60 tool calls (`steps`). A review that runs out of them before it writes its findings says so, with what it did write folded away, and nothing in it counts. Pick up the pull requests where it passes, or where the author has answered it. The status isn't required, so you can merge over it when the review is wrong. If the free model is down or its free period ends, the comment says so and the checks still run; change `MODEL` to another free model (`opencode models opencode` lists them).
 - **The automatic review is safe for forks because nothing from the pull request runs.** It uses `pull_request_target`, which runs the workflow from `main` with a token that can comment. It checks out `main` only, fetches the diff as text, and gives opencode no token and no tools but reading files (`.github/review/opencode.json`). Never make it check out or run the pull request's code.

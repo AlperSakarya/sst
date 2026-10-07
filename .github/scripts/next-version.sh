@@ -112,6 +112,30 @@ if [ "$level" = major ]; then
   echo "A breaking change is in. main doesn't take breaking changes for now: sort that out before releasing."
 fi
 
+# The automatic review drafts each pull request's line for the release notes,
+# under "Release note (draft)" in its comment. They're printed to start the
+# notes from. The comment breaks mentions with a zero-width space, which is
+# taken out here, so a package name like @sst-community/sst copies cleanly.
+drafts=""
+while IFS=$'\x1f' read -r number title; do
+  [ -n "$number" ] || continue
+  draft=$(gh api "repos/$GH_REPO/issues/$number/comments" \
+    --jq '[.[] | select(.body | startswith("<!-- sst-community-review -->"))][0].body // ""' |
+    awk '/^### Release note/{on=1; next} /^(#|<sub>)/{on=0} on' | grep -v '^[[:space:]]*$' |
+    perl -CS -pe 's/\x{200B}//g' | paste -sd' ' - || true)
+  case "$draft" in
+    "" | _None*) ;;
+    *) drafts+="- $draft ([#$number](https://github.com/$GH_REPO/pull/$number))"$'\n' ;;
+  esac
+done <<<"$merged"
+echo
+if [ -n "$drafts" ]; then
+  echo "Release notes the automatic review drafted, to start from:"
+  printf '%s' "$drafts"
+else
+  echo "The automatic review drafted no release notes for these pull requests."
+fi
+
 # The release notes are written by hand, so check that they link every pull
 # request in the release, as [#123] or a link to its page.
 notes=".github/release-notes/$next.md"

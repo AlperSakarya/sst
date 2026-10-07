@@ -29,7 +29,11 @@ The version bump the change needs, `patch`, `minor` or `major`, in backticks, th
 - `minor`: it adds something users can use, without breaking anything: a component, arg, output, `nodes` member, CLI command or flag, or SDK function.
 - `patch`: anything else, such as a fix, docs, tests, workflows, or a change users can't call. A fix that makes the code do what its docs already say is a `patch`.
 
-A pull request gets the highest one that applies.
+A pull request gets the highest one that applies. If it's `major`, list each part that breaks as a `[blocking]` finding, so the author knows what to undo.
+
+### Release note
+
+The line this change would get in the release notes, for people who use the fork: what changes for them, in bold, then a sentence on what it fixes or adds. For example: "**`sst remove` no longer fails when a static site's asset bucket is already gone.** A missing bucket now counts as deleted." Write "None" when users won't notice the change: tests, workflows, maintainer docs, or a refactor.
 
 ### Findings
 
@@ -42,6 +46,7 @@ A finding is `[blocking]` only if it is one of these:
 3. A component arg, default or behavior that changes without its doc comment changing too.
 4. A change that would replace or delete a user's existing resources when they update, and the description doesn't say so.
 5. Docs or comments that are now wrong: a broken link, a command or code that doesn't work, or a statement the change makes untrue.
+6. A part of a `major` change: something that breaks a config or app that works today.
 
 Everything else is `[suggestion]`: wording, duplication, naming, style, missing tests, refactors, optional improvements, and anything you aren't sure is a problem. When a finding could be either, it's a `[suggestion]`.
 
