@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <title>sst-community</title>
+  <rect width="512" height="512" rx="112" fill="#1a1a2e"/>
+  <g transform="translate(-9 4)" fill="none" stroke-linecap="round" stroke-width="40">
+    <!-- The fork: branches off upstream and bends up into a plus. -->
+    <path d="M180 342 C180 262 330 276 330 196 V72" stroke="#e8b949"/>
+    <!-- Upstream: a line of releases. -->
+    <path d="M180 396 V116" stroke="#63a0ba"/>
+    <circle cx="180" cy="396" r="36" fill="#63a0ba" stroke="none"/>
+    <circle cx="180" cy="116" r="36" fill="#63a0ba" stroke="none"/>
+    <!-- Plus the fixes. -->
+    <path d="M274 128 H386" stroke="#e8b949"/>
+  </g>
+</svg>

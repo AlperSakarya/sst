@@ -297,11 +297,12 @@ if (import.meta.env.DEV) {
 }
 
 // The sst-community docs are a static site on GitHub Pages, under this path.
+const site = "https://sst-community.github.io";
 const base = "/sst";
 
 // https://astro.build/config
 export default defineConfig({
-  site: "https://sst-community.github.io",
+  site,
   base,
   server: {
     host: "0.0.0.0",
@@ -326,7 +327,7 @@ export default defineConfig({
       // Dates come from git. CI leaves them out to build faster, except the
       // build that publishes the site (docs.yml sets DOCS_LAST_UPDATED).
       lastUpdated: !process.env.CI || process.env.DOCS_LAST_UPDATED === "true",
-      favicon: "/fork-favicon.svg",
+      favicon: "/brand/mark.svg",
       pagination: false,
       markdown: {
         // Use custom heading links
@@ -364,21 +365,27 @@ export default defineConfig({
         MobileMenuFooter: "./src/components/MobileMenuFooter.astro",
       },
       head: [
-        // Add light/dark mode favicon
+        // Safari and iOS don't use an SVG favicon.
         {
           tag: "link",
+          attrs: { rel: "apple-touch-icon", href: `${base}/brand/apple-touch-icon.png` },
+        },
+        // The image a shared link shows, in Discord, Slack and elsewhere.
+        // Starlight sets the title, description and twitter:card.
+        {
+          tag: "meta",
           attrs: {
-            rel: "icon",
-            href: `${base}/fork-favicon.svg`,
-            media: "(prefers-color-scheme: light)",
+            property: "og:image",
+            content: `${site}${base}/brand/social-preview.png`,
           },
         },
+        { tag: "meta", attrs: { property: "og:image:width", content: "1280" } },
+        { tag: "meta", attrs: { property: "og:image:height", content: "640" } },
         {
-          tag: "link",
+          tag: "meta",
           attrs: {
-            rel: "icon",
-            href: `${base}/fork-favicon.svg`,
-            media: "(prefers-color-scheme: dark)",
+            property: "og:image:alt",
+            content: "sst-community: SST, plus the fixes. A community-maintained fork of SST.",
           },
         },
       ],

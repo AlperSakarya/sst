@@ -51,7 +51,7 @@ SST edits `www/astro.config.mjs` often, mostly the sidebar. The fork's edits the
 
 - `site` and `base`
 - no `astro-sst` adapter
-- the title and favicon
+- the title and favicon, and the `head` tags for the Apple touch icon and the link preview image
 - `social` and `editLink`
 - the Kapa script removed from `head`
 - the redirects
@@ -159,6 +159,7 @@ The tests run without a real provider, so deploy an app with a site, a database,
 - **The site lives under `/sst`.** `www/src/fork-links.mjs` adds that base to root-relative links in Markdown and MDX. Components, redirects, favicons and hero actions add it themselves.
 - **SST's own pages aren't published.** The workflow deletes SST's blog, about and legal pages before it builds. The repo keeps them, and links to them go to sst.dev.
 - **The home page is `www/src/components/ForkLanding.astro`**, which `Hero.astro` renders for the site root. It names no versions and no fixes, so a release doesn't need an edit there. What a release changes goes in its notes.
+- **The logo is in `www/public/brand/`**, so the site also publishes it, under `/sst/brand/`. `mark.svg` is the source. Made from it: `github-avatar.png` (the org's profile picture), `discord-icon.png` (the Discord server's icon), `social-preview.png` (the repo's social preview, and the image a shared docs link shows, as `og:image`) and `apple-touch-icon.png`. The mark is the site's favicon. Its colors are the site's: navy `#1a1a2e`, blue `#63a0ba` for SST and marigold `#e8b949` for the fork.
 - **Two Discord links.** `forkDiscord` in `www/config.ts` is this project's server. `discord` stays SST's, because the migration guides send readers to channels there.
 
 ## Who can merge and release
