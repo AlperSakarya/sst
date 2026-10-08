@@ -12,6 +12,9 @@ const nextPkg = JSON.parse(JSON.stringify(pkg));
 // package stays "sst" so bun.lockb matches upstream's.
 nextPkg.name = "@sst-community/sst";
 nextPkg.version = metafile.version;
+// The oldest Node.js SST supports, MinNodeMajor in pkg/project/node.go, so a
+// package manager warns at install on an older one. Yarn 1 refuses to install.
+nextPkg.engines = { node: ">=22" };
 nextPkg.optionalDependencies = nextPkg.optionalDependencies || {};
 const snapshot = nextPkg.version.includes("0.0.0");
 if (snapshot) {

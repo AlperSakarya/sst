@@ -9,9 +9,14 @@ Build full-stack apps on your own infrastructure.
 > [!NOTE]
 > **sst-community** is a community-maintained fork of [SST](https://github.com/anomalyco/sst). It is not affiliated with SST or Anomaly. It tracks upstream releases and carries fixes that haven't landed upstream yet.
 >
+> **It needs Node.js 22 or later**, since 4.18.0.
+>
 > Releases have their own version numbers, because the fork moves faster than SST: up to 4.17.2 they followed SST's, and from there on the fork's 4.18.0 isn't SST's 4.18.0. Each release's notes say which SST release it's built on and list what it changes, and `sst version` shows the SST release too. Telemetry is off. Docs: [sst-community.github.io/sst](https://sst-community.github.io/sst/docs/). Chat: [Discord](https://discord.gg/DQWT3WGVm2).
 
 ## Installation
+
+> [!IMPORTANT]
+> **Node.js 22 or later is required**, since 4.18.0, everywhere you run `sst`, CI included. SST runs your `sst.config.ts` with Node, even when your app isn't written in JavaScript. On an older Node.js the CLI warns, and some features fail: on Node.js 20, inline Lambda callbacks do.
 
 For JavaScript projects, install the fork locally under the name `sst`, so the CLI version is tracked with your app and `import ... from "sst"` keeps working. You can then run the CLI with the same package manager.
 
