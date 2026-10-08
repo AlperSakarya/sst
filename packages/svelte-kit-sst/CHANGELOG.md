@@ -1,5 +1,9 @@
 # svelte-kit-sst
 
+## Unreleased
+
+- Add a `streaming` option. With `adapter({ streaming: true })`, the function streams its responses, so the promises a `load` function returns without awaiting reach the browser as they resolve. `sst.aws.SvelteKit` sets up the function URL for streaming when the option is on. Carries [anomalyco/sst#6674](https://github.com/anomalyco/sst/pull/6674).
+
 ## 3.0.1
 
 - `getClientAddress()` returns the visitor's IP address behind CloudFront, read from `CloudFront-Viewer-Address`. It used to return CloudFront's own address. It's only trustworthy when requests come through CloudFront; see the README.
