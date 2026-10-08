@@ -123,7 +123,35 @@ jobs:
           echo "Built on SST ${base:-(none found)}"
           echo "SST_UPSTREAM=${base#v}" >> "$GITHUB_ENV"
 
+      # A release that failed partway can be finished with "Re-run failed
+      # jobs": what's already out is skipped. A published GitHub release can't
+      # be changed, and an npm version can't be published twice. A lookup that
+      # fails for another reason stops here rather than guessing.
+      - name: See what's already released
+        id: done
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if draft=$(gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --json isDraft --jq .isDraft 2>&1); then
+            if [ "$draft" = false ]; then
+              echo "The GitHub release $GITHUB_REF_NAME is already published."
+              echo "github=true" >> "$GITHUB_OUTPUT"
+            fi
+          elif ! grep -q 'release not found' <<< "$draft"; then
+            echo "$draft"
+            exit 1
+          fi
+          spec="@sst-community/sst@${GITHUB_REF_NAME#v}"
+          if out=$(npm view "$spec" version 2>&1); then
+            echo "$spec is already on npm."
+            echo "npm=true" >> "$GITHUB_OUTPUT"
+          elif ! grep -q E404 <<< "$out"; then
+            echo "$out"
+            exit 1
+          fi
+
       - name: Release CLI
+        if: steps.done.outputs.github != 'true'
         uses: goreleaser/goreleaser-action@v6
         with:
           distribution: goreleaser
@@ -132,7 +160,18 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      # On a re-run after the GitHub release is out but before npm has the CLI:
+      # build the binaries again for the npm packages, without publishing.
+      - name: Build CLI for npm
+        if: steps.done.outputs.github == 'true' && steps.done.outputs.npm != 'true'
+        uses: goreleaser/goreleaser-action@v6
+        with:
+          distribution: goreleaser
+          version: latest
+          args: release --clean --skip=publish
+
       - name: Release JS SDK
+        if: steps.done.outputs.npm != 'true'
         run: |
           cd sdk/js
           bun run release
@@ -163,7 +202,8 @@ jobs:
             fi
             tag=latest
             case "$version" in *-*) tag=next ;; esac
-            (cd "$dir" && npm ci && npm publish --access public --tag "$tag")
+            # Verbose, so a refused publish shows npm's trusted-publishing steps.
+            (cd "$dir" && npm ci && npm publish --access public --tag "$tag" --loglevel verbose)
           done
         env:
           NPM_CONFIG_PROVENANCE: true

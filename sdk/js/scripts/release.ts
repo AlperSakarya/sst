@@ -33,7 +33,7 @@ const cpus = {
 };
 
 const tmp = `tmp`;
-const binaryPackages = [] as string[];
+const binaryPackages = [] as { dir: string; name: string }[];
 for (const artifact of artifacts) {
   if (artifact.type !== "Binary") continue;
   const os = artifact.goos === "windows" ? "win32" : artifact.goos;
@@ -64,12 +64,26 @@ for (const artifact of artifacts) {
     ),
   );
   nextPkg.optionalDependencies[name] = nextPkg.version;
-  binaryPackages.push(dir);
+  binaryPackages.push({ dir, name });
+}
+
+// On a re-run of a release that failed partway, some platform packages may
+// already be on npm, which won't take a version twice. Only "no such version"
+// counts as missing: a lookup that fails for another reason stops the release.
+async function published(name: string, version: string) {
+  const result = await $`npm view ${name}@${version} version`.nothrow().quiet();
+  if (result.exitCode === 0) return true;
+  if (result.stderr.toString().includes("E404")) return false;
+  throw new Error(`npm view ${name}@${version} failed:\n${result.stderr}`);
 }
 
 const tag = snapshot ? "snapshot" : "latest";
 try {
-  for (const dir of binaryPackages) {
+  for (const { dir, name } of binaryPackages) {
+    if (await published(name, nextPkg.version)) {
+      console.log(`${name}@${nextPkg.version} is already on npm`);
+      continue;
+    }
     await $`cd ${dir} && npm publish --access public --tag ${tag}`;
   }
   console.log(nextPkg);
