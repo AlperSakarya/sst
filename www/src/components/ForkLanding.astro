@@ -37,6 +37,13 @@ const command = "npm install sst@npm:@sst-community/sst";
     <h2 id="fl-switch-title" class="fl-caption">Switch a project from SST</h2>
     <ol class="fl-steps" aria-labelledby="fl-switch-title">
       <li class="fl-step">
+        <p class="fl-step-title">Use Node.js 22 or later</p>
+        <p class="fl-step-body">
+          <code>node --version</code> should show <code>v22</code> or later, wherever you run
+          <code>sst</code>, CI included. On an older Node.js the CLI warns, and some features fail.
+        </p>
+      </li>
+      <li class="fl-step">
         <p class="fl-step-title">Run the install in your project</p>
         <p class="fl-step-body">
           One line of <code>package.json</code> changes. Your imports and your
@@ -59,7 +66,8 @@ const command = "npm install sst@npm:@sst-community/sst";
       <li class="fl-step">
         <p class="fl-step-title">Check which CLI runs</p>
         <p class="fl-step-body">
-          <code>npx sst version</code> ends in <code>(sst-community)</code>.
+          <code>npx sst version</code> names <code>sst-community</code> and the SST
+          release it's built on.
         </p>
       </li>
       <li class="fl-step">
