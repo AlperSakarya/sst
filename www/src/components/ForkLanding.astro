@@ -22,6 +22,9 @@ const command = "npm install sst@npm:@sst-community/sst";
       <code class="fl-command">npm install <span class="fl-nowrap">sst@npm:@sst-community/sst</span></code>
       <button type="button" class="fl-copy" data-copy={command}>Copy</button>
     </div>
+    <p class="fl-requires">
+      Needs <strong>Node.js 22 or later</strong>, wherever you run <code>sst</code>, CI included.
+    </p>
     <div class="fl-actions">
       <a class="fl-button" href={`${base}/docs/`}>Read the docs</a>
       <a class="fl-link" href={`${repo}/releases`}>Releases</a>
@@ -226,6 +229,33 @@ const command = "npm install sst@npm:@sst-community/sst";
   .fl-copy:hover {
     color: var(--fl-ink);
   }
+  .fl-requires {
+    position: relative;
+    margin-top: 0.85rem !important;
+    max-width: 34rem;
+    padding-left: 1.1rem;
+    font-size: 0.9375rem;
+    line-height: 1.5;
+    color: var(--fl-text);
+  }
+  .fl-requires::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    top: 0.5em;
+    width: 0.5rem;
+    height: 0.5rem;
+    border-radius: 50%;
+    background: var(--fl-fork);
+  }
+  .fl-requires strong {
+    color: var(--fl-ink);
+    font-weight: 600;
+  }
+  .fl-requires code {
+    color: var(--fl-ink);
+  }
+
   .fl-actions {
     display: flex;
     flex-wrap: wrap;
