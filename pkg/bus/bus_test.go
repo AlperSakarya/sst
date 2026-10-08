@@ -82,6 +82,7 @@ func TestTypedSubscriberIsLossless(t *testing.T) {
 	const count = 12_000
 
 	ch := bus.Subscribe(testEventC{})
+	defer bus.Unsubscribe(ch)
 	before := bus.Dropped()
 
 	done := make(chan struct{})
