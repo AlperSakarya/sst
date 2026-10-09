@@ -101,6 +101,10 @@ export interface MicroVmArgs {
    *
    * Changing a linked resource's values rebuilds the image.
    *
+   * To read them with `Resource`, add `sst` to your app's dependencies. It comes with the
+   * SST CLI, about 75 MB, as an optional dependency that your app doesn't need. To leave it
+   * out of the image, install with `npm install --omit=optional`.
+   *
    * :::caution
    * The links' values, `Secret` values included, are stored in the image. Anyone allowed
    * to call `lambda:GetMicrovmImageVersion` on it can read them.
