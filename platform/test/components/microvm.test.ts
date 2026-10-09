@@ -266,6 +266,28 @@ describe("MicroVm", function () {
     expect(names).toContain("docker/Dockerfile.prod");
   });
 
+  it("leaves the sst-env.d.ts files out of the zip", async () => {
+    fs.mkdirSync(path.join(root, "typed", "lib"), { recursive: true });
+    fs.writeFileSync(path.join(root, "typed", "Dockerfile"), "FROM scratch\n");
+    fs.writeFileSync(path.join(root, "typed", "app.mjs"), "// app\n");
+    fs.writeFileSync(path.join(root, "typed", "sst-env.d.ts"), "// types\n");
+    fs.writeFileSync(
+      path.join(root, "typed", "lib", "sst-env.d.ts"),
+      "// types\n",
+    );
+    new MicroVm("Typed", { image: { context: "typed" } });
+    await settle();
+    expect(find(IMAGE_TYPE, "Typed")).toHaveLength(1);
+
+    const names = fs
+      .readFileSync(
+        path.join(root, ".sst", "artifacts", "Typed-microvm", "code.zip"),
+      )
+      .toString("latin1");
+    expect(names).toContain("app.mjs");
+    expect(names).not.toContain("sst-env.d.ts");
+  });
+
   it("runs MicroVMs through a network connector in the VPC", async () => {
     const vm = new MicroVm("InVpc", {
       image: { context: "sandbox" },

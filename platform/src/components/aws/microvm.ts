@@ -56,7 +56,9 @@ export interface MicroVmArgs {
    * run from.
    *
    * Lambda runs the `Dockerfile` itself, so Docker build args, targets, secrets and caches
-   * don't apply. Files matched by a `.dockerignore` in the `context` aren't uploaded.
+   * don't apply. Files matched by a `.dockerignore` in the `context` aren't uploaded, and
+   * neither are the `sst-env.d.ts` files SST generates, so writing them doesn't rebuild
+   * the image.
    *
    * @default `{ context: ".", dockerfile: "Dockerfile" }`
    * @example
@@ -609,6 +611,9 @@ export class MicroVm extends Component implements Link.Linkable {
             ignore: [
               ".sst/**",
               ".git/**",
+              // SST writes these after a deploy, and the root one changes with every
+              // resource in the app, so they'd rebuild the image for nothing.
+              "**/sst-env.d.ts",
               ...(await readDockerignore(context)),
               // Lambda reads the Dockerfile from the root of the zip.
               ...(dockerfile === "Dockerfile" ? [] : ["Dockerfile"]),
