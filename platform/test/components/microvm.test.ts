@@ -16,6 +16,18 @@ vi.mock("../../src/components/aws/helpers/bootstrap", () => ({
   },
 }));
 
+// Pulumi serializes a dynamic resource's provider, which needs `node:trace_events`, and
+// vitest's worker threads don't have it. So the pruning resource is a plain one here.
+vi.mock("../../src/components/aws/providers/microvm-image-prune", async () => {
+  const pulumi = await import("@pulumi/pulumi");
+  class MicrovmImagePrune extends pulumi.CustomResource {
+    constructor(name: string, args: any, opts?: pulumi.CustomResourceOptions) {
+      super("sst:aws:MicrovmImagePrune", name, args, opts);
+    }
+  }
+  return { MicrovmImagePrune };
+});
+
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "microvm-test-"));
 fs.mkdirSync(path.join(root, "sandbox"));
 fs.writeFileSync(
@@ -86,9 +98,15 @@ function find(type: string, prefix: string) {
   );
 }
 
+// Waits until no resource has been registered for 250 ms. Some are only registered after
+// the zip is written, which can take a while when the test files run in parallel.
 async function settle() {
-  for (let i = 0; i < 100; i++) {
-    await new Promise((resolve) => setImmediate(resolve));
+  let count = -1;
+  let quiet = 0;
+  for (let i = 0; i < 400 && quiet < 10; i++) {
+    await new Promise((resolve) => setTimeout(resolve, 25));
+    quiet = createdResources.length === count ? quiet + 1 : 0;
+    count = createdResources.length;
   }
 }
 
@@ -135,8 +153,7 @@ describe("MicroVm", function () {
       stage: "test",
     });
 
-    const prune = find("pulumi-nodejs:dynamic:Resource", "BasicImagePrune")[0];
-    expect(prune.name).toBe("BasicImagePrune.sst.aws.MicrovmImagePrune");
+    const prune = find("sst:aws:MicrovmImagePrune", "BasicImagePrune")[0];
     expect(prune.inputs).toMatchObject({
       imageArn: "arn:aws:test:::BasicImage",
       imageVersion: "1.0",
