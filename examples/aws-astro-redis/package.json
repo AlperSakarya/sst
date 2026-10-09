@@ -4,18 +4,20 @@
   "version": "0.0.1",
   "scripts": {
     "astro": "astro",
-    "build": "astro check && astro build",
+    "build": "astro build",
+    "check": "astro check",
     "dev": "astro dev",
     "preview": "astro preview",
     "start": "astro dev"
   },
   "dependencies": {
-    "@astrojs/check": "^0.9.4",
-    "@astrojs/node": "^8.3.4",
-    "astro": "^4.16.3",
-    "astro-sst": "2.43.5",
+    "@astrojs/node": "^11.1.7",
+    "astro": "^7.3.8",
     "ioredis": "^5.4.1",
-    "sst": "file:../../sdk/js",
-    "typescript": "^5.6.3"
+    "sst": "file:../../sdk/js"
+  },
+  "devDependencies": {
+    "@astrojs/check": "^0.9.10",
+    "typescript": "^6.0.3"
   }
 }
