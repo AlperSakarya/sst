@@ -34,6 +34,7 @@ import { FunctionArgs } from "./function";
 import { Permission, permission } from "./permission";
 import { Vpc } from "./vpc";
 import { warnOnce } from "../../util/warn";
+import { MicrovmImagePrune } from "./providers/microvm-image-prune";
 
 export interface MicroVmArgs {
   /**
@@ -49,6 +50,10 @@ export interface MicroVmArgs {
    * A build takes a few minutes, and runs again whenever the code, the `environment` or a
    * link's values change. If it fails, the deploy fails, and the build's logs are in the
    * log group. MicroVMs keep starting from the last version that built.
+   *
+   * Each build adds a version to the image, and Lambda allows 50. After a build, SST
+   * deletes the old ones. It keeps the newest 5 that built, and any that MicroVMs still
+   * run from.
    *
    * Lambda runs the `Dockerfile` itself, so Docker build args, targets, secrets and caches
    * don't apply. Files matched by a `.dockerignore` in the `context` aren't uploaded.
@@ -418,6 +423,7 @@ export class MicroVm extends Component implements Link.Linkable {
     this.buildRole = buildRole;
     this.image = createImage();
     this.networkConnector = createNetworkConnector();
+    pruneImageVersions();
 
     function normalizeDev() {
       if (!$dev) return false;
@@ -730,6 +736,20 @@ export class MicroVm extends Component implements Link.Linkable {
           },
           { parent: self, ignoreChanges: ["name"] },
         ),
+      );
+    }
+
+    // Every build adds a version to the image, and Lambda allows 50.
+    function pruneImageVersions() {
+      new MicrovmImagePrune(
+        `${name}ImagePrune`,
+        {
+          imageArn: self.image!.arn,
+          imageVersion: self.image!.imageVersion,
+          region,
+          keep: 5,
+        },
+        { parent: self },
       );
     }
 

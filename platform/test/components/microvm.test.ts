@@ -135,6 +135,15 @@ describe("MicroVm", function () {
       stage: "test",
     });
 
+    const prune = find("pulumi-nodejs:dynamic:Resource", "BasicImagePrune")[0];
+    expect(prune.name).toBe("BasicImagePrune.sst.aws.MicrovmImagePrune");
+    expect(prune.inputs).toMatchObject({
+      imageArn: "arn:aws:test:::BasicImage",
+      imageVersion: "1.0",
+      region: "us-west-2",
+      keep: 5,
+    });
+
     const logGroup = find(LOG_GROUP_TYPE, "Basic")[0].inputs;
     expect(logGroup.name).toBe(`/aws/lambda-microvms/${image.name}`);
     expect(logGroup.retentionInDays).toBe(30);
