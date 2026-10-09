@@ -110,6 +110,7 @@ const sidebar = [
           "docs/component/aws/bucket",
           "docs/component/aws/cluster",
           "docs/component/aws/service",
+          "docs/component/aws/microvm",
           "docs/component/aws/dynamo",
           "docs/component/aws/workflow",
           "docs/component/aws/realtime",

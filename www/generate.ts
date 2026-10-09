@@ -849,14 +849,14 @@ async function generateComponentDoc(
         const lines = [
           ...renderLinks(component),
           ...renderCloudflareBindings(component),
-          ...(["realtime", "task", "workflow"].includes(sdk?.name!)
+          ...(["microvm", "realtime", "task", "workflow"].includes(sdk?.name!)
             ? renderAbout(useModuleComment(sdk!))
             : []),
           ...(sdk
             ? renderFunctions(
                 sdk,
                 useModuleFunctions(sdk),
-                ["realtime", "task", "workflow"].includes(sdk.name)
+                ["microvm", "realtime", "task", "workflow"].includes(sdk.name)
                   ? { prefix: sdk.name }
                   : undefined
               )
@@ -2509,6 +2509,7 @@ async function buildComponents() {
       "../platform/src/components/aws/queue-lambda-subscriber.ts",
       "../platform/src/components/aws/kinesis-stream.ts",
       "../platform/src/components/aws/kinesis-stream-lambda-subscriber.ts",
+      "../platform/src/components/aws/microvm.ts",
       "../platform/src/components/aws/opencontrol.ts",
       "../platform/src/components/aws/open-search.ts",
       "../platform/src/components/aws/router.ts",
@@ -2609,6 +2610,7 @@ async function buildSdk() {
       defaultTag: false,
     },
     entryPoints: [
+      "../sdk/js/src/aws/microvm.ts",
       "../sdk/js/src/aws/realtime.ts",
       "../sdk/js/src/aws/task.ts",
       "../sdk/js/src/aws/workflow.ts",

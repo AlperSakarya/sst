@@ -269,6 +269,7 @@ export class Component extends ComponentResource {
             // ie. "-1234567" is automatically added
             "aws:lb/loadBalancer:LoadBalancer": ["name", 24],
             "aws:lambda/function:Function": ["name", 64],
+            "aws:lambdamicrovms/image:Image": ["name", 64],
             "aws:opensearch/domain:Domain": ["domainName", 28, { lower: true }],
             "aws:rds/cluster:Cluster": [
               "clusterIdentifier",
