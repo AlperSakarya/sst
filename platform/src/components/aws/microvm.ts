@@ -101,6 +101,11 @@ export interface MicroVmArgs {
    *
    * Changing a linked resource's values rebuilds the image.
    *
+   * :::caution
+   * The links' values, `Secret` values included, are stored in the image. Anyone allowed
+   * to call `lambda:GetMicrovmImageVersion` on it can read them.
+   * :::
+   *
    * @example
    * ```js
    * {
@@ -237,6 +242,10 @@ export interface MicroVmArgs {
    * In `sst dev`, the SDK sends the requests of every MicroVM you run to `dev.url`. So the
    * MicroVMs aren't isolated from each other the way they are once deployed.
    *
+   * So that the CLI can assume it, the execution role trusts your AWS account in `sst dev`,
+   * as `Service`'s and `Task`'s roles do. Any IAM user or role in the account whose
+   * policies allow `sts:AssumeRole` on it can then assume it too.
+   *
    * To build the image and run real MicroVMs in `sst dev`, pass in `false`.
    */
   dev?:
@@ -361,6 +370,10 @@ export interface MicroVmArgs {
  *   idle: { suspendAfter: "10 minutes", terminateAfter: "1 hour" }
  * });
  * ```
+ *
+ * Your account has a quota for the memory of all its MicroVMs in a region, running and
+ * suspended, and each MicroVM has 2 GB. Once it's reached, `microvm.run()` fails until
+ * some are terminated. You can ask for more in the Service Quotas console.
  *
  * :::caution
  * Lambda can't delete an image while MicroVMs from it are running. So `sst remove`, and
