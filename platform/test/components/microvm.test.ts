@@ -257,6 +257,46 @@ describe("MicroVm", function () {
     expect(names).toContain("docker/Dockerfile.prod");
   });
 
+  it("runs MicroVMs through a network connector in the VPC", async () => {
+    const vm = new MicroVm("InVpc", {
+      image: { context: "sandbox" },
+      vpc: {
+        privateSubnets: ["subnet-1", "subnet-2"],
+        securityGroups: ["sg-1"],
+      },
+    });
+    await settle();
+
+    const connectors = find(
+      "aws:lambda/coreNetworkConnector:CoreNetworkConnector",
+      "InVpc",
+    );
+    expect(connectors).toHaveLength(1);
+    expect(connectors[0].inputs.configuration).toEqual({
+      vpcEgressConfiguration: {
+        associatedComputeResourceTypes: ["MicroVm"],
+        networkProtocol: "IPv4",
+        subnetIds: ["subnet-1", "subnet-2"],
+        securityGroupIds: ["sg-1"],
+      },
+    });
+    expect(connectors[0].inputs.operatorRole).toBe(
+      "arn:aws:test:::InVpcOperatorRole",
+    );
+
+    const operator = find(ROLE_TYPE, "InVpcOperatorRole")[0];
+    // assumeRolePolicyForPrincipal gives an object, not a JSON string.
+    const trust = operator.inputs.assumeRolePolicy;
+    expect(trust.Statement[0].Principal).toEqual({
+      Service: "network-connectors.lambda.amazonaws.com",
+    });
+
+    const properties: any = await unwrap(vm.getSSTLink().properties as any);
+    expect(properties.egressNetworkConnectors).toEqual([
+      "arn:aws:test:::InVpcNetworkConnector",
+    ]);
+  });
+
   it("runs the app locally in sst dev, without building the image", async () => {
     // @ts-ignore
     global.$dev = true;

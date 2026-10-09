@@ -17,6 +17,7 @@ import {
   getPartitionOutput,
   getRegionOutput,
   iam,
+  lambda,
   lambdamicrovms,
   s3,
 } from "@pulumi/aws";
@@ -31,6 +32,8 @@ import { bootstrap } from "./helpers/bootstrap";
 import { RETENTION } from "./logging";
 import { FunctionArgs } from "./function";
 import { Permission, permission } from "./permission";
+import { Vpc } from "./vpc";
+import { warnOnce } from "../../util/warn";
 
 export interface MicroVmArgs {
   /**
@@ -169,6 +172,55 @@ export interface MicroVmArgs {
     retention?: Input<keyof typeof RETENTION>;
   }>;
   /**
+   * Send your MicroVMs' outbound traffic through the private subnets of a VPC, so they can
+   * reach private resources, like a database.
+   *
+   * Requests to a MicroVM still come in through its HTTPS endpoint. Only its outbound
+   * traffic goes through the VPC, and it reaches the internet only through the VPC's NAT.
+   *
+   * This creates a Lambda network connector that every MicroVM is run with. Creating it
+   * takes about 5 minutes. Lambda's docs say to terminate the MicroVMs that use it before
+   * it's changed or removed.
+   *
+   * @example
+   * Create a `Vpc` component, with a NAT if your MicroVMs need the internet.
+   *
+   * ```js title="sst.config.ts"
+   * const myVpc = new sst.aws.Vpc("MyVpc", { nat: "ec2" });
+   * ```
+   *
+   * And pass it in.
+   *
+   * ```js
+   * {
+   *   vpc: myVpc
+   * }
+   * ```
+   *
+   * Or pass in the subnets and security groups of an existing VPC.
+   *
+   * ```js
+   * {
+   *   vpc: {
+   *     privateSubnets: ["subnet-0b6a2b73896dc8c4c", "subnet-021389ebee680c2f0"],
+   *     securityGroups: ["sg-0399348378a4c256c"]
+   *   }
+   * }
+   * ```
+   */
+  vpc?:
+    | Vpc
+    | Input<{
+        /**
+         * A list of VPC security group IDs.
+         */
+        securityGroups: Input<Input<string>[]>;
+        /**
+         * A list of VPC subnet IDs.
+         */
+        privateSubnets: Input<Input<string>[]>;
+      }>;
+  /**
    * Configure how this component works in `sst dev`.
    *
    * By default, the image isn't built in `sst dev`. Instead, `dev.command` runs your app on
@@ -219,6 +271,15 @@ export interface MicroVmArgs {
      * Transform the CloudWatch log group.
      */
     logGroup?: Transform<cloudwatch.LogGroupArgs>;
+    /**
+     * Transform the Lambda network connector, created when `vpc` is set.
+     */
+    networkConnector?: Transform<lambda.CoreNetworkConnectorArgs>;
+    /**
+     * Transform the IAM role Lambda uses to create the network connector's network
+     * interfaces in the VPC.
+     */
+    operatorRole?: Transform<iam.RoleArgs>;
   };
 }
 
@@ -270,6 +331,17 @@ export interface MicroVmArgs {
  * await vm.terminate();
  * ```
  *
+ * #### Reach private resources in a VPC
+ *
+ * ```ts title="sst.config.ts"
+ * const vpc = new sst.aws.Vpc("MyVpc", { nat: "ec2" });
+ *
+ * new sst.aws.MicroVm("Sandbox", {
+ *   image: { context: "./sandbox" },
+ *   vpc
+ * });
+ * ```
+ *
  * #### Limit how long MicroVMs live
  *
  * A MicroVM you don't terminate keeps running until it's idle, or until its `duration` is
@@ -294,6 +366,7 @@ export class MicroVm extends Component implements Link.Linkable {
   private readonly buildRole?: iam.Role;
   private readonly executionRole: iam.Role;
   private readonly logGroup: cloudwatch.LogGroup;
+  private readonly networkConnector?: lambda.CoreNetworkConnector;
   private readonly region: Output<string>;
   private readonly partition: Output<string>;
   private readonly runDefaults: Output<{
@@ -339,10 +412,12 @@ export class MicroVm extends Component implements Link.Linkable {
       return;
     }
 
+    const vpc = normalizeVpc();
     const code = createCode();
     const buildRole = createBuildRole();
     this.buildRole = buildRole;
     this.image = createImage();
+    this.networkConnector = createNetworkConnector();
 
     function normalizeDev() {
       if (!$dev) return false;
@@ -658,6 +733,106 @@ export class MicroVm extends Component implements Link.Linkable {
       );
     }
 
+    function normalizeVpc() {
+      if (!args.vpc) return;
+
+      if (args.vpc instanceof Vpc) {
+        const result = {
+          privateSubnets: args.vpc.privateSubnets,
+          securityGroups: args.vpc.securityGroups,
+        };
+        return all([
+          args.vpc.id,
+          args.vpc.nodes.natGateways,
+          args.vpc.nodes.natInstances,
+        ]).apply(([id, natGateways, natInstances]) => {
+          if (natGateways.length === 0 && natInstances.length === 0)
+            warnOnce(
+              `\nWarning: The "${name}" MicroVm is in the "${id}" VPC, which does not have a NAT gateway. Its MicroVMs can't reach the internet. To let them, set the "nat" prop on the "Vpc" component.\n`,
+            );
+          return result;
+        });
+      }
+
+      return output(args.vpc);
+    }
+
+    function createNetworkConnector() {
+      if (!vpc) return;
+
+      const operatorRole = new iam.Role(
+        ...transform(
+          args.transform?.operatorRole,
+          `${name}OperatorRole`,
+          {
+            assumeRolePolicy: iam.assumeRolePolicyForPrincipal({
+              Service: "network-connectors.lambda.amazonaws.com",
+            }),
+            inlinePolicies: [
+              {
+                name: "inline",
+                policy: iam.getPolicyDocumentOutput({
+                  statements: [
+                    {
+                      actions: ["ec2:CreateNetworkInterface"],
+                      resources: [
+                        interpolate`arn:${partition}:ec2:*:*:network-interface/*`,
+                        interpolate`arn:${partition}:ec2:*:*:subnet/*`,
+                        interpolate`arn:${partition}:ec2:*:*:security-group/*`,
+                      ],
+                    },
+                    {
+                      actions: ["ec2:CreateTags"],
+                      resources: [
+                        interpolate`arn:${partition}:ec2:*:*:network-interface/*`,
+                      ],
+                      conditions: [
+                        {
+                          test: "StringEquals",
+                          variable: "ec2:ManagedResourceOperator",
+                          values: ["network-connectors.lambda.amazonaws.com"],
+                        },
+                      ],
+                    },
+                  ],
+                }).json,
+              },
+            ],
+          },
+          { parent: self },
+        ),
+      );
+
+      return new lambda.CoreNetworkConnector(
+        ...transform(
+          args.transform?.networkConnector,
+          `${name}NetworkConnector`,
+          {
+            configuration: {
+              vpcEgressConfiguration: {
+                associatedComputeResourceTypes: ["MicroVm"],
+                networkProtocol: "IPv4",
+                subnetIds: vpc!.privateSubnets,
+                securityGroupIds: vpc!.securityGroups,
+              },
+            },
+            // Lambda checks the operator role as soon as the connector is created. A
+            // role IAM hasn't finished propagating fails that check, and leaves a
+            // FAILED connector behind, so wait until the role is 20 seconds old.
+            operatorRole: all([
+              operatorRole.arn,
+              operatorRole.createDate,
+            ]).apply(async ([arn, created]) => {
+              const wait = Date.parse(created) + 20_000 - Date.now();
+              if (wait > 0) await new Promise((r) => setTimeout(r, wait));
+              return arn;
+            }),
+          },
+          { parent: self },
+        ),
+      );
+    }
+
     async function readDockerignore(context: string) {
       const content = await fs.promises
         .readFile(path.join(context, ".dockerignore"), "utf8")
@@ -704,6 +879,11 @@ export class MicroVm extends Component implements Link.Linkable {
        * The CloudWatch log group.
        */
       logGroup: this.logGroup,
+      /**
+       * The Lambda network connector. Only created when `vpc` is set, and not in
+       * `sst dev`.
+       */
+      networkConnector: this.networkConnector,
     };
   }
 
@@ -728,7 +908,9 @@ export class MicroVm extends Component implements Link.Linkable {
         executionRoleArn: this.executionRole.arn,
         logGroup: this.logGroup.name,
         ingressNetworkConnectors: [connector("ALL_INGRESS")],
-        egressNetworkConnectors: [connector("INTERNET_EGRESS")],
+        egressNetworkConnectors: [
+          this.networkConnector?.arn ?? connector("INTERNET_EGRESS"),
+        ],
         port: this.runDefaults.port,
         duration: this.runDefaults.duration,
         idle: this.runDefaults.idle,

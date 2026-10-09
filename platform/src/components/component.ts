@@ -270,6 +270,7 @@ export class Component extends ComponentResource {
             "aws:lb/loadBalancer:LoadBalancer": ["name", 24],
             "aws:lambda/function:Function": ["name", 64],
             "aws:lambdamicrovms/image:Image": ["name", 64],
+            "aws:lambda/coreNetworkConnector:CoreNetworkConnector": ["name", 64],
             "aws:opensearch/domain:Domain": ["domainName", 28, { lower: true }],
             "aws:rds/cluster:Cluster": [
               "clusterIdentifier",
