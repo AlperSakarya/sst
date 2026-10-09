@@ -335,12 +335,24 @@ export namespace microvm {
     options?: Options,
   ): MicroVm {
     const tokens = new Map<number, { value: string; expires: number }>();
+    const refreshing = new Map<number, Promise<string>>();
 
     async function token(port = resource.port) {
       const cached = tokens.get(port);
       // Refresh with 5 minutes to spare.
       if (cached && cached.expires - Date.now() > 5 * 60 * 1000)
         return cached.value;
+      // Requests made while a token is being created wait for it, instead of each
+      // creating one.
+      let pending = refreshing.get(port);
+      if (!pending) {
+        pending = createToken(port).finally(() => refreshing.delete(port));
+        refreshing.set(port, pending);
+      }
+      return pending;
+    }
+
+    async function createToken(port: number) {
       const res = await call(
         `${API}/${id}/auth-token`,
         {
