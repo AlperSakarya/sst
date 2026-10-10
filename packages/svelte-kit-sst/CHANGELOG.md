@@ -1,6 +1,6 @@
 # svelte-kit-sst
 
-## Unreleased
+## 3.1.0
 
 - Add a `streaming` option. With `adapter({ streaming: true })`, the function streams its responses, so the promises a `load` function returns without awaiting reach the browser as they resolve. `sst.aws.SvelteKit` sets up the function URL for streaming when the option is on. Carries [anomalyco/sst#6674](https://github.com/anomalyco/sst/pull/6674).
 
