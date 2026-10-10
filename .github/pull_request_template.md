@@ -2,7 +2,7 @@
 
 ## Why
 
-<!-- Link the issue. If the bug is in SST itself, link the upstream issue or pull request when there is one. -->
+<!-- Link the issue. If the bug is in SST itself, link the upstream issue or pull request when there is one, and see Upstream below. -->
 
 ## Upstream
 
