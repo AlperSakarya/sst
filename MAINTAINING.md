@@ -195,6 +195,7 @@ Also:
 ## Issues, ideas and votes
 
 - **Issues** are for bugs, and for fixes to carry from SST's repo. `.github/ISSUE_TEMPLATE/` has a form for each: a bug report (label `bug`) and a request for an upstream fix (label `upstream fix`).
+- **A pull request that fixes an issue in SST's repo links it with `Closes`.** Put `Closes https://github.com/anomalyco/sst/issues/N` in the pull request's description, one line for each issue, with the full URL. GitHub then lists the pull request under Development on that issue, so people there can see the fix is in the fork. It doesn't close SST's issue. Only the description counts: not a comment, not a commit message. An SST pull request can't be linked this way, so write its URL in the description. The automatic review asks for the line. When a release has the fix, also comment on the SST issue or pull request to thank its author.
 - **People vote with a 👍 on the issue.** [Open issues, most-wanted first](https://github.com/sst-community/sst/issues?q=is%3Aissue+is%3Aopen+sort%3Areactions-%2B1-desc).
 - **Ideas and direction** go in [Discussions](https://github.com/sst-community/sst/discussions), in the Ideas category, which has its own upvotes. Polls are there too.
 - **Questions** go to Discord.
