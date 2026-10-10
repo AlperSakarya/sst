@@ -2741,11 +2741,21 @@ if (event.request.headers.host.value.includes('cloudfront.net')) {
 
 // CloudFront Function handler code injected into site and router CF functions.
 // NOTE: This string is size-sensitive — CloudFront Functions have a 10KB limit.
+// NOTE: `s3Key` is the S3 key of a file: the folder, the path prefix the files were
+// uploaded under (`s3.prefix`), then the uri without the site's base path. Without
+// `s3.prefix` (metadata from an older version) it is the folder and the whole uri.
+// It takes everything as arguments: reading `baselessUri` from `routeSite` fails with
+// "cannot access variable before initialization" in the CloudFront function runtime.
+// The custom 404 and the "unmatched" branches below still use the old key.
 export const CF_ROUTER_INJECTION = minify`
 async function routeSite(kvNamespace, metadata) {
   const baselessUri = metadata.base
     ? event.request.uri.replace(metadata.base, "")
     : event.request.uri;
+
+  function s3Key(metadata, uri, baselessUri) {
+    return metadata.s3.dir + (metadata.s3.prefix === undefined ? uri : metadata.s3.prefix + baselessUri);
+  }
 
   // Route to S3 files
   try {
@@ -2756,7 +2766,7 @@ async function routeSite(kvNamespace, metadata) {
       : ["", ".html", "/index.html"];
     const v = await Promise.any(postfixes.map(p => cf.kvs().get(kvNamespace + ":" + u + p).then(v => p)));
     // files are stored in a subdirectory, add it to the request uri
-    event.request.uri = metadata.s3.dir + event.request.uri + v;
+    event.request.uri = s3Key(metadata, event.request.uri, baselessUri) + v;
     setS3Origin(metadata.s3.domain);
     return;
   } catch (e) {}
@@ -2766,7 +2776,7 @@ async function routeSite(kvNamespace, metadata) {
     for (var i=0, l=metadata.s3.routes.length; i<l; i++) {
       const route = metadata.s3.routes[i];
       if (baselessUri.startsWith(route)) {
-        event.request.uri = metadata.s3.dir + event.request.uri;
+        event.request.uri = s3Key(metadata, event.request.uri, baselessUri);
         // uri ends with /, ie. /usage/ -> /usage/index.html
         if (event.request.uri.endsWith("/")) {
           event.request.uri += "index.html";
@@ -3011,6 +3021,7 @@ export type KV_SITE_METADATA = {
   s3: {
     domain: string;
     dir: string; // Should be "" if no dir
+    prefix?: string; // The path prefix the files are stored under, "" if none. Missing in metadata from older versions.
     routes: string[];
   };
   image?: {
