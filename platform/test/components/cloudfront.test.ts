@@ -617,6 +617,56 @@ describe("CloudFront router", () => {
       expect(event.request.uri).toBe("/admin/app.js");
     });
 
+    it("takes the base off the start of the uri only", async () => {
+      // String.replace takes out the first match anywhere, so a uri outside
+      // the base that has the base in the middle lost it, and got another key.
+      const { event, routeSite } = loadRouteSite({
+        uri: "/other/admin/board/chunk.js",
+        headers: { host: { value: "example.com" } },
+      });
+
+      await routeSite(
+        "test",
+        siteMetadata({
+          s3: { domain: S3_DOMAIN, dir: "/_assets", prefix: "", routes: ["/other"] },
+        }),
+      );
+
+      expect(event.request.uri).toBe("/_assets/other/admin/board/chunk.js");
+    });
+
+    it("takes the base off at a segment boundary only", async () => {
+      const { event, routeSite } = loadRouteSite({
+        uri: "/administrator/chunk.js",
+        headers: { host: { value: "example.com" } },
+      });
+
+      await routeSite(
+        "test",
+        siteMetadata({
+          base: "/admin",
+          s3: { domain: S3_DOMAIN, dir: "/_assets", prefix: "/admin", routes: ["/administrator"] },
+        }),
+      );
+
+      expect(event.request.uri).toBe("/_assets/admin/administrator/chunk.js");
+    });
+
+    it("sends the base path itself to the server", async () => {
+      // The uri is the base, with no trailing slash: it is taken off whole,
+      // matches no S3 route, and goes to the server.
+      let origin: any;
+      const { routeSite } = loadRouteSite({
+        uri: "/admin/board",
+        headers: { host: { value: "example.com" } },
+        updateRequestOrigin: (o) => (origin = o),
+      });
+
+      await routeSite("test", siteMetadata());
+
+      expect(origin.domainName).toBe("server.lambda-url.us-east-1.on.aws");
+    });
+
     it("leaves a path the S3 routes do not match to the server", async () => {
       let origin: any;
       const { routeSite } = loadRouteSite({
