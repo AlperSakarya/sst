@@ -142,7 +142,7 @@ issues=0
 while IFS= read -r url; do
   [ -n "$url" ] || continue
   issues=$((issues + 1))
-  if ! URL="$url" perl -ne 'BEGIN { $u = $ENV{URL} } $f = 1 if /\b(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?|refs?|related(?:\s+to)?)\b[:\s]+\Q$u\E(?![0-9])/i; END { exit($f ? 0 : 1) }' <<<"$scan"; then
+  if ! URL="$url" perl -ne 'BEGIN { $u = $ENV{URL} } $f = 1 if /\b(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?|refs?)\b[:\s]+\Q$u\E(?![0-9])/i; END { exit($f ? 0 : 1) }' <<<"$scan"; then
     unlinked="${unlinked:+$unlinked, }\`$url\`"
     unlinked_count=$((unlinked_count + 1))
   fi
