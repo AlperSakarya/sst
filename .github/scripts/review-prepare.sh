@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Collects a pull request for the automatic review and runs the checks that
-# don't need a model: the risk label, the title, generated docs, versions, and
-# whether the description says how the change was tested.
+# don't need a model: the risk label, the title, generated docs, versions,
+# whether the description says how the change was tested, and whether it links
+# SST's issues with a closing keyword.
 #
 # Needs GH_TOKEN, GH_REPO, PR and OUT. Writes, in $OUT:
 #   pr.md        title, description, files and check results, for the model
@@ -128,6 +129,32 @@ if [ "$code" = true ]; then
   else
     pass "**Testing:** the description says how it was tested."
   fi
+fi
+
+# Upstream issues: GitHub lists this pull request under Development on an issue
+# in SST's repo when the description has a closing keyword right before the
+# issue's URL. A comment, a commit message or a bare #123 doesn't count, and it
+# doesn't close SST's issue. `Refs` says that the change doesn't fix it.
+scan=$(perl -0pe 's/<!--.*?-->//gs' <<<"$body")
+unlinked=""
+unlinked_count=0
+issues=0
+while IFS= read -r url; do
+  [ -n "$url" ] || continue
+  issues=$((issues + 1))
+  if ! URL="$url" perl -ne 'BEGIN { $u = $ENV{URL} } $f = 1 if /\b(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?|refs?)\b[:\s]+\Q$u\E(?![0-9])/i; END { exit($f ? 0 : 1) }' <<<"$scan"; then
+    unlinked="${unlinked:+$unlinked, }\`$url\`"
+    unlinked_count=$((unlinked_count + 1))
+  fi
+done < <(grep -Eio 'https://github\.com/anomalyco/(sst|astro-sst)/issues/[0-9]+' <<<"$scan" | awk '!seen[tolower($0)]++')
+if [ -n "$unlinked" ]; then
+  if [ "$unlinked_count" -eq 1 ]; then
+    fail "**Upstream issue:** $unlinked is linked without a closing keyword. If this change fixes it, put \`Closes <the issue's URL>\` on its own line, so this pull request shows under Development on that issue in SST's repo. If it doesn't fix it, write \`Refs <the issue's URL>\`. GitHub reads only the description, and the full URL."
+  else
+    fail "**Upstream issues:** $unlinked are linked without a closing keyword. For each one this change fixes, put \`Closes <the issue's URL>\` on its own line, so this pull request shows under Development on that issue in SST's repo. For each one it doesn't fix, write \`Refs <the issue's URL>\`. GitHub reads only the description, and the full URL."
+  fi
+elif [ "$issues" -gt 0 ]; then
+  pass "**Upstream issues** the description links have a \`Closes\` or \`Refs\` line."
 fi
 echo "$failed" >"$OUT/failed"
 

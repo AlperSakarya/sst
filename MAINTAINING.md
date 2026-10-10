@@ -175,7 +175,7 @@ Also:
 - **`.github/CODEOWNERS`** makes the `committers` team the owner of every file, so every pull request needs a committer's approval, unless an admin or a releaser merges it. Below that, it lists the files that decide what's built, released and run when the package is installed; a pull request that touches one needs its owner's review instead. When you add such a file, add it there.
 - **An automatic review runs first** on every pull request to `main` that isn't a draft, and again on each push or edit to its title or description. `.github/workflows/review.yml` posts one comment, kept up to date, with:
   - a `risk: low`, `risk: medium` or `risk: high` label, from the paths changed (`.github/scripts/review-prepare.sh` has the rules)
-  - checks that don't need a model: the title, no edits to generated docs, no version changes, and a description that says how a change to code was tested
+  - checks that don't need a model: the title, no edits to generated docs, no version changes, a `Closes` line (or `Refs`, for an issue the change doesn't fix) for each SST issue the description links, and a description that says how a change to code was tested
   - a review by opencode with a free model (`MODEL` in the workflow), following `.github/review/prompt.md`
   - a `semver: patch`, `semver: minor` or `semver: major` label, from the review's Version section. A run whose review has no version leaves the label as it was.
   - a drafted line for the release notes, which `next-version.sh` prints at release time. A change that alters what users need, such as a new minimum requirement, starts with "Breaking:" and gets a `breaking` label. Add or remove the label by hand when the review gets it wrong: `next-version.sh` goes by the label.
@@ -195,6 +195,7 @@ Also:
 ## Issues, ideas and votes
 
 - **Issues** are for bugs, and for fixes to carry from SST's repo. `.github/ISSUE_TEMPLATE/` has a form for each: a bug report (label `bug`) and a request for an upstream fix (label `upstream fix`).
+- **A pull request that fixes an issue in SST's repo links it with `Closes`.** Put `Closes https://github.com/anomalyco/sst/issues/N` in the pull request's description, one line for each issue, with the full URL. GitHub then lists the pull request under Development on that issue, so people there can see the fix is in the fork. It doesn't close SST's issue. Only the description counts: not a comment, not a commit message. The check looks at issue URLs only (`/issues/`). Link an SST pull request by its URL in the description. The automatic review asks for the line. When a release has the fix, also comment on the SST issue or pull request to thank its author.
 - **People vote with a 👍 on the issue.** [Open issues, most-wanted first](https://github.com/sst-community/sst/issues?q=is%3Aissue+is%3Aopen+sort%3Areactions-%2B1-desc).
 - **Ideas and direction** go in [Discussions](https://github.com/sst-community/sst/discussions), in the Ideas category, which has its own upvotes. Polls are there too.
 - **Questions** go to Discord.
