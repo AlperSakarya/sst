@@ -443,7 +443,7 @@ export interface SvelteKitArgs extends SsrSiteArgs {
  * ```
  *
  * The function URL is then set up for [response streaming](https://docs.aws.amazon.com/lambda/latest/dg/configuration-response-streaming.html).
- * This needs a newer version of the `svelte-kit-sst` adapter than 3.0.1, which doesn't have the option.
+ * This needs version 3.1.0 or later of the `svelte-kit-sst` adapter. Earlier versions don't have the option.
  */
 export class SvelteKit extends SsrSite {
   constructor(
