@@ -57,9 +57,31 @@ const MAX_KV_KEY_LENGTH = 500;
 // lists at most 1 MB of prerendered files.
 const MAX_LISTED_KV_BYTES = 1024 * 1024;
 
-const supportedRegions = {
+// Regions without Lambda function URLs, which the server functions use. Creating one there
+// fails with `AccessDeniedException: Unable to determine service/operation name to be
+// authorized`. Checked by creating a function URL in each region, in October 2026. The ones
+// not listed here either work or couldn't be reached (me-south-1, Bahrain, is out of
+// service). AWS no longer publishes a list of these regions; the page below is the general
+// function URL documentation:
+// https://docs.aws.amazon.com/lambda/latest/dg/urls-configuration.html
+export const regionsWithoutFunctionUrls = [
+  "ap-east-2",
+  "ap-south-2",
+  "ap-southeast-4",
+  "ap-southeast-5",
+  "ap-southeast-6",
+  "ap-southeast-7",
+  "ca-west-1",
+  "eu-central-2",
+  "il-central-1",
+  "me-central-1",
+  "mx-central-1",
+];
+
+export const supportedRegions = {
   "af-south-1": { lat: -33.9249, lon: 18.4241 }, // Cape Town, South Africa
   "ap-east-1": { lat: 22.3193, lon: 114.1694 }, // Hong Kong
+  "ap-east-2": { lat: 25.033, lon: 121.5654 }, // Taipei, Taiwan
   "ap-northeast-1": { lat: 35.6895, lon: 139.6917 }, // Tokyo, Japan
   "ap-northeast-2": { lat: 37.5665, lon: 126.978 }, // Seoul, South Korea
   "ap-northeast-3": { lat: 34.6937, lon: 135.5023 }, // Osaka, Japan
@@ -309,6 +331,13 @@ export interface SsrSiteArgs extends BaseSsrSiteArgs {
    *   regions: ["us-east-1", "eu-west-1"]
    * }
    * ```
+   *
+   * :::note
+   * A site with a server function can't be deployed to the regions where Lambda function
+   * URLs aren't available: `ap-east-2`, `ap-south-2`, `ap-southeast-4`, `ap-southeast-5`,
+   * `ap-southeast-6`, `ap-southeast-7`, `ca-west-1`, `eu-central-2`, `il-central-1`,
+   * `me-central-1` and `mx-central-1`.
+   * :::
    */
   regions?: Input<string[]>;
   permissions?: FunctionArgs["permissions"];
@@ -1248,22 +1277,6 @@ async function handler(event) {
           );
 
         return regions.map((region) => {
-          if (
-            [
-              "ap-south-2",
-              "ap-southeast-4",
-              "ap-southeast-5",
-              "ca-west-1",
-              "eu-south-2",
-              "eu-central-2",
-              "il-central-1",
-              "me-central-1",
-            ].includes(region)
-          )
-            throw new VisibleError(
-              `Region ${region} is not supported by this component. Please select a different AWS region.`,
-            );
-
           if (!Object.values(Region).includes(region as Region))
             throw new VisibleError(
               `Invalid AWS region: "${region}". Please specify a valid AWS region.`,
@@ -1482,6 +1495,19 @@ async function handler(event) {
     function createServers() {
       return all([regions, plan.server]).apply(([regions, planServer]) => {
         if (!planServer) return [];
+
+        // Only sites that create a server function need a function URL. `sst dev`
+        // doesn't create one, and `sst refresh` has to work on a stack that an earlier
+        // deploy left behind in one of these regions. (`sst remove` doesn't run the
+        // program.)
+        const needsFunctionUrls =
+          !($dev && args.dev !== false) && $cli.command !== "refresh";
+        for (const region of regions) {
+          if (needsFunctionUrls && regionsWithoutFunctionUrls.includes(region))
+            throw new VisibleError(
+              `Region ${region} is not supported by this component, because Lambda function URLs aren't available there. Please select a different AWS region.`,
+            );
+        }
 
         return regions.map((region) => {
           const provider = useProvider(region);
