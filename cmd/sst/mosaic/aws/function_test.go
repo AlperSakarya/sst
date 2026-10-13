@@ -70,3 +70,25 @@ func TestFunctionConcurrentInitAndNext(t *testing.T) {
 	stopRequests()
 	handlers.Wait()
 }
+
+// A reply is sent again the given number of times, and no more once the dev
+// server stops.
+func TestResend(t *testing.T) {
+	sent := 0
+	resend(context.Background(), 5, time.Millisecond, func() {
+		sent++
+	})
+	if sent != 5 {
+		t.Fatalf("sent %d times, want 5", sent)
+	}
+
+	sent = 0
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	resend(ctx, 5, time.Hour, func() {
+		sent++
+	})
+	if sent != 0 {
+		t.Fatalf("sent %d times after the context was done, want 0", sent)
+	}
+}

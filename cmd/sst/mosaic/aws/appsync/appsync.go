@@ -416,6 +416,9 @@ func (c *Connection) Publish(ctx context.Context, channel string, event interfac
 		return err
 	}
 	eventJson, err := json.Marshal(event)
+	if err != nil {
+		return err
+	}
 	body, err := json.Marshal(map[string]interface{}{
 		"channel": channel,
 		"events":  []string{string(eventJson)},
@@ -450,5 +453,24 @@ func (c *Connection) Publish(ctx context.Context, channel string, event interfac
 		return fmt.Errorf("request failed with status %d: %s", resp.StatusCode, string(bodyBytes))
 	}
 
+	// Say when AppSync answers that it didn't publish the event. Only logged, so
+	// what a caller does after a publish doesn't change.
+	bodyBytes, _ := io.ReadAll(resp.Body)
+	if failedEvents(bodyBytes) > 0 {
+		log.Error("event not published", "channel", channel, "response", string(bodyBytes))
+	}
+
 	return nil
+}
+
+// failedEvents counts the events a publish response lists as failed. A response
+// it can't read counts none.
+func failedEvents(body []byte) int {
+	var result struct {
+		Failed []json.RawMessage `json:"failed"`
+	}
+	if json.Unmarshal(body, &result) != nil {
+		return 0
+	}
+	return len(result.Failed)
 }
