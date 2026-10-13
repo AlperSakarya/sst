@@ -19,6 +19,7 @@ import (
 	"github.com/sst/sst/v3/cmd/sst/mosaic/aws/bridge"
 	"github.com/sst/sst/v3/cmd/sst/mosaic/watcher"
 	"github.com/sst/sst/v3/pkg/bus"
+	"github.com/sst/sst/v3/pkg/id"
 	"github.com/sst/sst/v3/pkg/project"
 	"github.com/sst/sst/v3/pkg/runtime"
 	"github.com/sst/sst/v3/pkg/server"
@@ -106,15 +107,15 @@ func function(ctx context.Context, input input) {
 	// AppSync can accept an event and not deliver it, as in the seconds after a
 	// Lambda cold-starts and subscribes. The bridge has had the ping by then, so it
 	// would wait until Lambda times the invocation out. So a reply to a bridge is
-	// sent again a few times. The bridge passes on the first copy with its request
-	// ID, and a later one only fills in packets it's missing.
-	resendReply := func(message bridge.MessageType, workerID, requestID string, body []byte) {
+	// sent again a few times, with the ID of the first. The bridge passes on the
+	// first copy with that ID, and a later one only fills in packets it's missing.
+	resendReply := func(message bridge.MessageType, workerID, messageID string, body []byte) {
 		channel := input.prefix + "/" + workerID + "/in"
 		go resend(ctx, replyResends, replyResendEvery, func() {
 			writer := input.client.NewWriter(message, channel)
-			writer.SetID(requestID)
+			writer.SetID(messageID)
 			if err := sendMessage(writer, bytes.NewReader(body)); err != nil {
-				log.Error("failed to resend reply", "workerID", workerID, "requestID", requestID, "err", err)
+				log.Error("failed to resend reply", "workerID", workerID, "messageID", messageID, "err", err)
 			}
 		})
 	}
@@ -159,12 +160,17 @@ func function(ctx context.Context, input input) {
 		workerID := r.PathValue("workerID")
 		log.Info("got init error", "workerID", workerID, "requestID", r.PathValue("requestID"))
 		writer := input.client.NewWriter(bridge.MessageInitError, input.prefix+"/"+workerID+"/in")
+		// an init error has no request ID, so its copies share one made here, and
+		// the bridge passes on only one of them
+		messageID := id.Ascending()
+		writer.SetID(messageID)
 		var buf bytes.Buffer
 		tee := io.TeeReader(r.Body, &buf)
 		if err := sendMessage(writer, tee); err != nil {
 			log.Error("failed to send init error", "workerID", workerID, "err", err)
 		}
 		w.WriteHeader(200)
+		resendReply(bridge.MessageInitError, workerID, messageID, buf.Bytes())
 		info, ok := loadWorker(workerID)
 		if ok {
 			fee := &FunctionErrorEvent{
