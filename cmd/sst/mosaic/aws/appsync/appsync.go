@@ -416,6 +416,9 @@ func (c *Connection) Publish(ctx context.Context, channel string, event interfac
 		return err
 	}
 	eventJson, err := json.Marshal(event)
+	if err != nil {
+		return err
+	}
 	body, err := json.Marshal(map[string]interface{}{
 		"channel": channel,
 		"events":  []string{string(eventJson)},

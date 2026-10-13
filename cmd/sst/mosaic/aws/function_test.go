@@ -71,33 +71,22 @@ func TestFunctionConcurrentInitAndNext(t *testing.T) {
 	handlers.Wait()
 }
 
-// A response is sent again the given number of times, and no more once the dev
-// server stops or a publish fails.
+// A reply is sent again the given number of times, and no more once the dev
+// server stops.
 func TestResend(t *testing.T) {
 	sent := 0
-	resend(context.Background(), 5, time.Millisecond, func() error {
+	resend(context.Background(), 5, time.Millisecond, func() {
 		sent++
-		return nil
 	})
 	if sent != 5 {
 		t.Fatalf("sent %d times, want 5", sent)
 	}
 
 	sent = 0
-	resend(context.Background(), 5, time.Millisecond, func() error {
-		sent++
-		return fmt.Errorf("connection closed")
-	})
-	if sent != 1 {
-		t.Fatalf("sent %d times after a failed publish, want 1", sent)
-	}
-
-	sent = 0
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	resend(ctx, 5, time.Hour, func() error {
+	resend(ctx, 5, time.Hour, func() {
 		sent++
-		return nil
 	})
 	if sent != 0 {
 		t.Fatalf("sent %d times after the context was done, want 0", sent)

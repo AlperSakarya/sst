@@ -103,6 +103,21 @@ func function(ctx context.Context, input input) {
 		info, ok := workers[workerID]
 		return info, ok
 	}
+	// AppSync can accept an event and not deliver it, as in the seconds after a
+	// Lambda cold-starts and subscribes. The bridge has had the ping by then, so it
+	// would wait until Lambda times the invocation out. So a reply to a bridge is
+	// sent again a few times. The bridge passes on the first copy with its request
+	// ID, and a later one only fills in packets it's missing.
+	resendReply := func(message bridge.MessageType, workerID, requestID string, body []byte) {
+		channel := input.prefix + "/" + workerID + "/in"
+		go resend(ctx, replyResends, replyResendEvery, func() {
+			writer := input.client.NewWriter(message, channel)
+			writer.SetID(requestID)
+			if err := sendMessage(writer, bytes.NewReader(body)); err != nil {
+				log.Error("failed to resend reply", "workerID", workerID, "requestID", requestID, "err", err)
+			}
+		})
+	}
 	evts := bus.Subscribe(&watcher.FileChangedEvent{}, &project.CompleteEvent{}, &runtime.BuildInput{}, &FunctionInvokedEvent{})
 	go fileLogger(input.project)
 
@@ -146,8 +161,9 @@ func function(ctx context.Context, input input) {
 		writer := input.client.NewWriter(bridge.MessageInitError, input.prefix+"/"+workerID+"/in")
 		var buf bytes.Buffer
 		tee := io.TeeReader(r.Body, &buf)
-		io.Copy(writer, tee)
-		writer.Close()
+		if err := sendMessage(writer, tee); err != nil {
+			log.Error("failed to send init error", "workerID", workerID, "err", err)
+		}
 		w.WriteHeader(200)
 		info, ok := loadWorker(workerID)
 		if ok {
@@ -194,24 +210,7 @@ func function(ctx context.Context, input input) {
 					Output:     buf.Bytes(),
 				})
 			}
-			// AppSync drops an event the bridge's subscription doesn't deliver, as
-			// while its websocket reconnects, and the bridge then waits until Lambda
-			// times the invocation out. So send the response again a few times. The
-			// bridge takes the first one with its request ID and ignores the rest.
-			channel := input.prefix + "/" + workerID + "/in"
-			body := buf.Bytes()
-			go resend(ctx, responseResends, responseResendEvery, func() error {
-				writer := input.client.NewWriter(bridge.MessageResponse, channel)
-				writer.SetID(requestID)
-				_, err := writer.Write(body)
-				if err == nil {
-					err = writer.Close()
-				}
-				if err != nil {
-					log.Error("failed to resend response", "workerID", workerID, "requestID", requestID, "err", err)
-				}
-				return err
-			})
+			resendReply(bridge.MessageResponse, workerID, requestID, buf.Bytes())
 		}
 	})
 
@@ -227,6 +226,7 @@ func function(ctx context.Context, input input) {
 			log.Error("failed to send error", "workerID", workerID, "requestID", requestID, "err", err)
 		}
 		w.WriteHeader(202)
+		resendReply(bridge.MessageError, workerID, requestID, buf.Bytes())
 		info, ok := loadWorker(workerID)
 		if ok {
 			fee := &FunctionErrorEvent{
@@ -405,15 +405,17 @@ func function(ctx context.Context, input input) {
 				}
 			case bridge.MessageNext:
 				writer := input.client.NewWriter(bridge.MessagePing, input.prefix+"/"+msg.Source+"/in")
-				json.NewEncoder(writer).Encode(bridge.PingBody{})
-				writer.Close()
+				if err := sendJSON(writer, bridge.PingBody{}); err != nil {
+					log.Error("failed to send ping", "workerID", msg.Source, "err", err)
+				}
 				ch := loadNextChan(msg.Source)
 				_, ok := loadWorker(msg.Source)
 				if !ok {
 					log.Info("asking for reboot", "workerID", msg.Source)
 					writer := input.client.NewWriter(bridge.MessageReboot, input.prefix+"/"+msg.Source+"/in")
-					json.NewEncoder(writer).Encode(bridge.RebootBody{})
-					writer.Close()
+					if err := sendJSON(writer, bridge.RebootBody{}); err != nil {
+						log.Error("failed to send reboot", "workerID", msg.Source, "err", err)
+					}
 				}
 				ch <- msg.Body
 				continue
@@ -570,11 +572,11 @@ func reusableBuild(build *runtime.BuildOutput, handlerBuilt bool) bool {
 	return !handlerBuilt || handlerFileExists(build)
 }
 
-// How many more times a response is sent after the first, and how far apart:
-// over 15 seconds, for a bridge whose websocket is reconnecting.
+// How many more times a reply to a bridge is sent after the first, and how far
+// apart: over 15 seconds.
 const (
-	responseResends     = 5
-	responseResendEvery = 3 * time.Second
+	replyResends     = 5
+	replyResendEvery = 3 * time.Second
 )
 
 // sendMessage writes a message's body and publishes what's left of it, and returns
@@ -588,17 +590,25 @@ func sendMessage(writer *bridge.Writer, body io.Reader) error {
 	return err
 }
 
+// sendJSON publishes a message whose body is v as JSON.
+func sendJSON(writer *bridge.Writer, v any) error {
+	var body bytes.Buffer
+	if err := json.NewEncoder(&body).Encode(v); err != nil {
+		return err
+	}
+	return sendMessage(writer, &body)
+}
+
 // resend calls publish the given number of times, waiting before each, and stops
-// early when the context is done or publish fails.
-func resend(ctx context.Context, times int, every time.Duration, publish func() error) {
+// early when the context is done. A failed publish doesn't stop it, since the next
+// one may still get through.
+func resend(ctx context.Context, times int, every time.Duration, publish func()) {
 	for range times {
 		select {
 		case <-ctx.Done():
 			return
 		case <-time.After(every):
 		}
-		if publish() != nil {
-			return
-		}
+		publish()
 	}
 }

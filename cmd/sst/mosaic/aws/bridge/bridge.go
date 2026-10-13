@@ -256,6 +256,12 @@ func sorted(ctx context.Context, sub chan string) iter.Seq[Packet] {
 				var packet Packet
 				json.Unmarshal([]byte(msg), &packet)
 				slog.Info("got packet", "id", packet.ID, "type", packet.Type, "from", packet.Source)
+				// A packet behind the cursor is a copy of one already passed on, as
+				// the CLI sends a reply more than once. Drop it, so a copy only fills
+				// in packets that are missing, and a finished message isn't kept.
+				if packet.Index < next[packet.ID] {
+					continue
+				}
 				unprocessed, ok := history[packet.ID]
 				if !ok {
 					unprocessed = map[int]Packet{}
