@@ -232,7 +232,16 @@ func (r *Runtime) Build(ctx context.Context, input *runtime.BuildInput) (*runtim
 	if input.Dev {
 		nodeModules, err := fs.FindUp(file, "node_modules")
 		if err == nil {
-			os.Symlink(nodeModules, filepath.Join(input.Out(), "node_modules"))
+			link := filepath.Join(input.Out(), "node_modules")
+			// a dev rebuild keeps the folder, so replace a link that points somewhere else
+			if target, err := os.Readlink(link); err == nil && target != nodeModules {
+				if err := os.Remove(link); err != nil {
+					slog.Warn("could not replace the node_modules link", "path", link, "error", err)
+				}
+			}
+			if err := os.Symlink(nodeModules, link); err != nil && !os.IsExist(err) {
+				slog.Warn("could not link node_modules", "path", link, "error", err)
+			}
 		}
 	}
 

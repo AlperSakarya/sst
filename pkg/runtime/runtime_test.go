@@ -210,3 +210,83 @@ func TestCollectionBuildEncryptedResourceFileWithBundle(t *testing.T) {
 		assert.NoError(t, err)
 	})
 }
+
+func TestCollectionBuildKeepsOutputInDev(t *testing.T) {
+	projectDir := t.TempDir()
+	cfg := filepath.Join(projectDir, "sst.config.ts")
+	mr := &outputRuntime{mockRuntime{matchFn: func(r string) bool { return r == "nodejs" }}}
+	c := runtime.NewCollection(cfg, mr)
+
+	input := func(dev bool) *runtime.BuildInput {
+		return &runtime.BuildInput{
+			CfgPath:    cfg,
+			Dev:        dev,
+			FunctionID: "my-function",
+			Handler:    "index.handler",
+			Runtime:    "nodejs",
+		}
+	}
+
+	// a file a running worker still needs
+	out := input(true).Out()
+	require.NoError(t, os.MkdirAll(out, 0755))
+	bundle := filepath.Join(out, "bundle.mjs")
+	require.NoError(t, os.WriteFile(bundle, []byte("// bundle"), 0644))
+
+	_, err := c.Build(context.Background(), input(true))
+	require.NoError(t, err)
+	_, err = os.Stat(bundle)
+	assert.NoError(t, err, "a dev rebuild should leave the output folder alone")
+
+	// a deploy build still starts from an empty folder
+	deploy := input(false).Out()
+	require.NoError(t, os.MkdirAll(deploy, 0755))
+	stale := filepath.Join(deploy, "stale.mjs")
+	require.NoError(t, os.WriteFile(stale, []byte("// stale"), 0644))
+	_, err = c.Build(context.Background(), input(false))
+	require.NoError(t, err)
+	_, err = os.Stat(stale)
+	assert.True(t, os.IsNotExist(err), "a deploy build should clear the output folder")
+}
+
+func TestCollectionBuildDevRelinksCopyFiles(t *testing.T) {
+	projectDir := t.TempDir()
+	cfg := filepath.Join(projectDir, "sst.config.ts")
+	first := filepath.Join(projectDir, "first.txt")
+	second := filepath.Join(projectDir, "second.txt")
+	require.NoError(t, os.WriteFile(first, []byte("1"), 0644))
+	require.NoError(t, os.WriteFile(second, []byte("2"), 0644))
+
+	mr := &outputRuntime{mockRuntime{matchFn: func(r string) bool { return r == "nodejs" }}}
+	c := runtime.NewCollection(cfg, mr)
+	build := func(from string) *runtime.BuildInput {
+		return &runtime.BuildInput{
+			CfgPath:    cfg,
+			Dev:        true,
+			FunctionID: "my-function",
+			Handler:    "index.handler",
+			Runtime:    "nodejs",
+			CopyFiles: []struct {
+				From string `json:"from"`
+				To   string `json:"to"`
+			}{{From: from, To: "data.txt"}},
+		}
+	}
+
+	input := build(first)
+	_, err := c.Build(context.Background(), input)
+	require.NoError(t, err)
+	link := filepath.Join(input.Out(), "data.txt")
+	target, err := os.Readlink(link)
+	require.NoError(t, err)
+	assert.Equal(t, first, target)
+
+	// the same file again leaves the link alone, a different one replaces it
+	_, err = c.Build(context.Background(), build(first))
+	require.NoError(t, err)
+	_, err = c.Build(context.Background(), build(second))
+	require.NoError(t, err)
+	target, err = os.Readlink(link)
+	require.NoError(t, err)
+	assert.Equal(t, second, target)
+}

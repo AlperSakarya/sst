@@ -222,10 +222,18 @@ func function(ctx context.Context, input input) {
 	builds := map[string]*runtime.BuildOutput{}
 	targets := map[string]*runtime.BuildInput{}
 
+	// whether a build wrote its handler into its output folder when it was made,
+	// the Python runtime in dev for one doesn't, its handler stays in the source
+	handlerBuilt := map[string]bool{}
+
 	getBuildOutput := func(functionID string) *runtime.BuildOutput {
 		build := builds[functionID]
 		if build != nil {
-			return build
+			if reusableBuild(build, handlerBuilt[functionID]) {
+				return build
+			}
+			log.Info("build output missing, rebuilding", "functionID", functionID, "handler", build.Handler)
+			delete(builds, functionID)
 		}
 		target, _ := targets[functionID]
 		build, err := input.project.Runtime.Build(ctx, target)
@@ -245,6 +253,7 @@ func function(ctx context.Context, input input) {
 			return nil
 		}
 		builds[functionID] = build
+		handlerBuilt[functionID] = handlerFileExists(build)
 		return build
 	}
 
@@ -500,4 +509,42 @@ func fileLogger(p *project.Project) {
 			}
 		}
 	}
+}
+
+// handlerFileExists tells whether the handler of a build is in its output folder:
+// a file named like the handler with an extension, or without one for compiled
+// binaries. A source map next to a missing bundle doesn't count.
+func handlerFileExists(build *runtime.BuildOutput) bool {
+	// the method comes after the last dot of the file name, not of the whole path
+	handlerFile := build.Handler
+	base := filepath.Base(handlerFile)
+	if i := strings.LastIndex(base, "."); i > 0 {
+		handlerFile = filepath.Join(filepath.Dir(handlerFile), base[:i])
+	}
+	name := filepath.Base(handlerFile)
+	entries, err := os.ReadDir(filepath.Join(build.Out, filepath.Dir(handlerFile)))
+	if err != nil {
+		return false
+	}
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		file := entry.Name()
+		if file == name || (strings.HasPrefix(file, name+".") && !strings.HasSuffix(file, ".map")) {
+			return true
+		}
+	}
+	return false
+}
+
+// reusableBuild tells whether a cached build can be used again. A build that wrote
+// its handler into the output folder is built again once that file is gone. One that
+// didn't, such as Python in dev where the handler stays in the source, has nothing
+// to check.
+func reusableBuild(build *runtime.BuildOutput, handlerBuilt bool) bool {
+	if build == nil {
+		return false
+	}
+	return !handlerBuilt || handlerFileExists(build)
 }

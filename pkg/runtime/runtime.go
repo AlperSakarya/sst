@@ -128,11 +128,14 @@ func (c *Collection) Build(ctx context.Context, input *BuildInput) (*BuildOutput
 	}
 
 	if input.Bundle == "" {
-		err := os.RemoveAll(out)
-		if err != nil {
-			return nil, err
+		// skip removing in dev mode so running workers don't lose their bundle files
+		if !input.Dev {
+			err := os.RemoveAll(out)
+			if err != nil {
+				return nil, err
+			}
 		}
-		err = os.MkdirAll(out, 0755)
+		err := os.MkdirAll(out, 0755)
 		if err != nil {
 			return nil, err
 		}
@@ -167,6 +170,12 @@ func (c *Collection) Build(ctx context.Context, input *BuildInput) (*BuildOutput
 				return nil, err
 			}
 			if input.Dev {
+				// a dev rebuild keeps the folder, so replace a link that points somewhere else
+				if target, err := os.Readlink(dest); err == nil && target != from {
+					if err := os.Remove(dest); err != nil {
+						slog.Warn("could not replace the copyFiles link", "path", dest, "error", err)
+					}
+				}
 				if err := os.Symlink(from, dest); err != nil {
 					if !os.IsExist(err) {
 						return nil, err
