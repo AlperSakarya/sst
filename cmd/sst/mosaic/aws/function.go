@@ -21,7 +21,9 @@ import (
 	"github.com/sst/sst/v3/cmd/sst/mosaic/aws/bridge"
 	"github.com/sst/sst/v3/cmd/sst/mosaic/watcher"
 	"github.com/sst/sst/v3/pkg/bus"
+	"github.com/sst/sst/v3/pkg/flag"
 	"github.com/sst/sst/v3/pkg/id"
+	"github.com/sst/sst/v3/pkg/process"
 	"github.com/sst/sst/v3/pkg/project"
 	"github.com/sst/sst/v3/pkg/runtime"
 	"github.com/sst/sst/v3/pkg/server"
@@ -147,38 +149,60 @@ func function(ctx context.Context, input input) {
 	// first copy with that ID, and a later one only fills in packets it's missing.
 	//
 	// A bridge only sends its next invocation once it's done with the one before,
-	// so its reply's resends stop then.
+	// so its reply's resends stop then. What the function printed is sent after
+	// the reply, as a message of its own, so a worker's resends are kept by
+	// message: the output's don't stop the reply's.
 	type resending struct{ cancel context.CancelFunc }
-	resends := map[string]*resending{}
+	resends := map[string]map[string]*resending{}
 	stopResending := func(workerID string) {
 		stateMu.Lock()
 		defer stateMu.Unlock()
-		if r, ok := resends[workerID]; ok {
+		for _, r := range resends[workerID] {
 			r.cancel()
-			delete(resends, workerID)
 		}
+		delete(resends, workerID)
+	}
+	var cloudLogs *pendingLogs
+	if flag.SST_DEV_CLOUDWATCH_LOGS {
+		cloudLogs = newPendingLogs()
+	}
+	// newReply makes the writer for a reply to a bridge. When what the function
+	// printed is sent to the bridge, it says that follows.
+	newReply := func(message bridge.MessageType, workerID, messageID string) *bridge.Writer {
+		writer := input.client.NewWriter(message, input.prefix+"/"+workerID+"/in")
+		writer.SetID(messageID)
+		writer.SetLogsFollow(cloudLogs != nil && message != bridge.MessageLogs)
+		return writer
 	}
 	resendReply := func(message bridge.MessageType, workerID, messageID string, body []byte) {
-		channel := input.prefix + "/" + workerID + "/in"
 		resendCtx, cancel := context.WithCancel(ctx)
 		r := &resending{cancel}
 		stateMu.Lock()
-		if previous, ok := resends[workerID]; ok {
-			previous.cancel()
+		// a new reply means the bridge is past the ones before
+		if message != bridge.MessageLogs {
+			for _, previous := range resends[workerID] {
+				previous.cancel()
+			}
+			delete(resends, workerID)
 		}
-		resends[workerID] = r
+		if resends[workerID] == nil {
+			resends[workerID] = map[string]*resending{}
+		}
+		resends[workerID][messageID] = r
 		stateMu.Unlock()
 		go func() {
 			resend(resendCtx, replyResends, replyResendEvery, func() {
-				writer := input.client.NewWriter(message, channel)
-				writer.SetID(messageID)
+				writer := newReply(message, workerID, messageID)
 				if err := sendMessage(writer, bytes.NewReader(body)); err != nil {
 					log.Error("failed to resend reply", "workerID", workerID, "messageID", messageID, "err", err)
 				}
 			})
 			stateMu.Lock()
-			if resends[workerID] == r {
-				delete(resends, workerID)
+			if resends[workerID][messageID] == r {
+				delete(resends[workerID], messageID)
+				if len(resends[workerID]) == 0 {
+					delete(resends, workerID)
+				}
 			}
 			stateMu.Unlock()
 			cancel()
@@ -187,6 +211,37 @@ func function(ctx context.Context, input input) {
 	// a worker whose invocation was put back in its queue, for the loop to start
 	// it again if it's gone
 	requeued := make(chan string, 100)
+	// sendLogs sends the bridge what the worker printed up to a reply, after it,
+	// so the reply isn't held up. It's sent when there's nothing too, so the
+	// bridge stops waiting. A copy arrives after the bridge has stopped waiting,
+	// and is printed as late, so there are copies only when there's something to
+	// print.
+	sendLogs := func(workerID, replyID string) {
+		if cloudLogs == nil {
+			return
+		}
+		go func() {
+			select {
+			case <-ctx.Done():
+				return
+			case <-time.After(logsDelay):
+			}
+			lines, dropped := cloudLogs.take(workerID)
+			body, err := json.Marshal(bridge.LogsBody{ReplyID: replyID, Lines: lines, Dropped: dropped})
+			if err != nil {
+				log.Error("failed to encode logs", "workerID", workerID, "err", err)
+				return
+			}
+			messageID := id.Ascending()
+			// the resends are set before the first copy goes, as for a reply
+			if len(lines) > 0 || dropped > 0 {
+				resendReply(bridge.MessageLogs, workerID, messageID, body)
+			}
+			if err := sendMessage(newReply(bridge.MessageLogs, workerID, messageID), bytes.NewReader(body)); err != nil {
+				log.Error("failed to send logs", "workerID", workerID, "replyID", replyID, "err", err)
+			}
+		}()
+	}
 	evts := bus.Subscribe(&watcher.FileChangedEvent{}, &project.CompleteEvent{}, &runtime.BuildInput{}, &FunctionInvokedEvent{})
 
 	input.server.Mux.HandleFunc(`/lambda/{workerID}/2018-06-01/runtime/invocation/next`, func(w http.ResponseWriter, r *http.Request) {
@@ -249,11 +304,10 @@ func function(ctx context.Context, input input) {
 	input.server.Mux.HandleFunc(`/lambda/{workerID}/2018-06-01/runtime/init/error`, func(w http.ResponseWriter, r *http.Request) {
 		workerID := r.PathValue("workerID")
 		log.Info("got init error", "workerID", workerID, "requestID", r.PathValue("requestID"))
-		writer := input.client.NewWriter(bridge.MessageInitError, input.prefix+"/"+workerID+"/in")
 		// an init error has no request ID, so its copies share one made here, and
 		// the bridge passes on only one of them
 		messageID := id.Ascending()
-		writer.SetID(messageID)
+		writer := newReply(bridge.MessageInitError, workerID, messageID)
 		var buf bytes.Buffer
 		if _, err := buf.ReadFrom(r.Body); err != nil {
 			log.Error("failed to read init error", "workerID", workerID, "err", err)
@@ -265,6 +319,7 @@ func function(ctx context.Context, input input) {
 			log.Error("failed to send init error", "workerID", workerID, "err", err)
 		}
 		w.WriteHeader(200)
+		sendLogs(workerID, messageID)
 		info, ok := loadWorker(workerID)
 		if ok {
 			fee := &FunctionErrorEvent{
@@ -280,8 +335,8 @@ func function(ctx context.Context, input input) {
 		workerID := r.PathValue("workerID")
 		requestID := r.PathValue("requestID")
 		log.Info("got response", "workerID", workerID, "requestID", r.PathValue("requestID"))
-		writer := input.client.NewWriter(bridge.MessageResponse, input.prefix+"/"+workerID+"/in")
-		writer.SetID(requestID)
+		writer := newReply(bridge.MessageResponse, workerID, requestID)
+		defer sendLogs(workerID, requestID)
 		info, ok := loadWorker(workerID)
 		if ok && info.Streaming {
 			writer.SetStreaming(true)
@@ -320,8 +375,7 @@ func function(ctx context.Context, input input) {
 		workerID := r.PathValue("workerID")
 		requestID := r.PathValue("requestID")
 		log.Info("got error", "workerID", workerID, "requestID", r.PathValue("requestID"))
-		writer := input.client.NewWriter(bridge.MessageError, input.prefix+"/"+workerID+"/in")
-		writer.SetID(requestID)
+		writer := newReply(bridge.MessageError, workerID, requestID)
 		var buf bytes.Buffer
 		if _, err := buf.ReadFrom(r.Body); err != nil {
 			log.Error("failed to read error", "workerID", workerID, "requestID", requestID, "err", err)
@@ -331,6 +385,7 @@ func function(ctx context.Context, input input) {
 			log.Error("failed to send error", "workerID", workerID, "requestID", requestID, "err", err)
 		}
 		w.WriteHeader(202)
+		sendLogs(workerID, requestID)
 		info, ok := loadWorker(workerID)
 		if ok {
 			fee := &FunctionErrorEvent{
@@ -442,18 +497,27 @@ func function(ctx context.Context, input input) {
 		}
 		go func() {
 			logs := worker.Logs()
-			scanner := bufio.NewScanner(logs)
-			for scanner.Scan() {
-				line := scanner.Text()
+			onLine := func(line string) {
 				stateMu.Lock()
 				requestID := info.CurrentRequestID
 				stateMu.Unlock()
+				if cloudLogs != nil {
+					cloudLogs.add(workerID, line)
+				}
 				bus.Publish(&FunctionLogEvent{
 					FunctionID: functionID,
 					WorkerID:   workerID,
 					RequestID:  requestID,
 					Line:       line,
 				})
+			}
+			// A line too long for a bufio.Scanner stopped it, and the worker was
+			// then taken for dead while it was still running.
+			err := process.ReadLines(logs, maxOutputLine, onLine, func() { onLine(tooLongNote("function")) })
+			if err != nil {
+				log.Error("failed to read function output", "workerID", workerID, "err", err)
+				// Keep reading, or the worker blocks on a full pipe.
+				io.Copy(io.Discard, logs)
 			}
 			workerShutdownChan <- info
 		}()

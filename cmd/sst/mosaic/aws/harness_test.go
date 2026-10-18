@@ -103,6 +103,8 @@ type fakeRuntime struct {
 	// crash makes a worker report an init error and exit without asking for an
 	// invocation, as a Node.js worker does when its handler throws on import
 	crash atomic.Bool
+	// prints is a line a worker prints before it answers each invocation
+	prints string
 }
 
 func (r *fakeRuntime) Match(runtime string) bool { return runtime == "fake" }
@@ -199,6 +201,9 @@ func (w *fakeWorker) run(ctx context.Context, output *io.PipeWriter) {
 		cancel()
 		requestID := resp.Header.Get("lambda-runtime-aws-request-id")
 		answer := w.runtime.handle(string(event))
+		if w.runtime.prints != "" {
+			fmt.Fprintln(output, w.runtime.prints)
+		}
 		resp, err = http.Post(w.api+"/invocation/"+requestID+"/response", "application/json", strings.NewReader(answer))
 		if err != nil {
 			return
