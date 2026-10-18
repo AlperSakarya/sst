@@ -64,6 +64,16 @@ jobs:
       - name: Run Go tests
         run: go test -vet=all ./...
 
+      # The components' tests, under a mock of the deploy engine. Node 22 or
+      # later, as an app's config needs.
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+
+      - name: Run platform tests
+        run: cd platform && npx vitest run --pool=forks
+
       - name: Build CLI
         run: go build -o sst ./cmd/sst
 
