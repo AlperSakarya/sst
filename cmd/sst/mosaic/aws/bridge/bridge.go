@@ -308,8 +308,10 @@ var finishedPerSet = 10_000
 
 // A message is passed on a packet at a time, in order. One that a packet is
 // missing from waits for it, holding the packets that came after. At most
-// maxWaiting messages wait, holding at most maxWaitingBytes of packets. Past
-// either, the one that started waiting first is dropped.
+// maxWaiting messages wait, holding at most maxWaitingBytes of packet data, as
+// it's sent, in base64. Past either, the one that started waiting first is
+// dropped. It isn't counted as finished, so a whole copy of it, as the CLI
+// sends of a reply, is still passed on.
 var (
 	maxWaiting      = 1_000
 	maxWaitingBytes = 8 << 20
@@ -381,7 +383,7 @@ func sorted(ctx context.Context, sub chan string) iter.Seq[Packet] {
 				if _, waits := messages[packet.ID]; waits && !known {
 					order = append(order, packet.ID)
 				}
-				for len(messages) > mostWaiting || heldBytes > mostBytes {
+				for len(order) > 0 && (len(messages) > mostWaiting || heldBytes > mostBytes) {
 					id := order[0]
 					order = order[1:]
 					message, ok := messages[id]

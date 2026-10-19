@@ -196,3 +196,31 @@ func TestSortedCountsACopyOnce(t *testing.T) {
 		t.Fatalf("passed on %v, want %v", got, want)
 	}
 }
+
+// A message that was dropped isn't counted as finished, so a whole copy that
+// comes after, as the CLI sends of a reply, is still passed on.
+func TestDroppedMessageIsPassedOnWhenACopyComes(t *testing.T) {
+	with(t, &maxWaiting, 1)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	conn := &fakeConn{sub: make(chan string, 10)}
+	client := NewClient(ctx, conn, "test", "test")
+	conn.sub <- packet("cut", 0, "he", false)
+	conn.sub <- packet("other", 1, "x", true)
+	first := <-client.Read()
+	if _, err := io.ReadAll(first.Body); err != io.ErrUnexpectedEOF {
+		t.Fatalf("reading the dropped message gave %v, want io.ErrUnexpectedEOF", err)
+	}
+
+	conn.sub <- packet("cut", 0, "he", false)
+	conn.sub <- packet("cut", 1, "llo", true)
+	select {
+	case again := <-client.Read():
+		body, err := io.ReadAll(again.Body)
+		if again.ID != "cut" || err != nil || string(body) != "hello" {
+			t.Fatalf("got %q with %q and %v, want the whole copy of cut", again.ID, body, err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("the whole copy of the dropped message wasn't passed on")
+	}
+}
