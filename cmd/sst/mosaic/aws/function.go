@@ -452,6 +452,21 @@ func function(ctx context.Context, input input) {
 	workerEnv := map[string][]string{}
 	// the function of each worker, kept after it exits, to start it again
 	workerFunction := map[string]string{}
+	// When each worker that isn't running stopped: it exited, wasn't started
+	// again after a rebuild, or failed to start. Its environment is forgotten
+	// forgetAfter later, unless it started again, and expired tells the loop
+	// when.
+	stoppedAt := map[string]time.Time{}
+	expired := make(chan string, 100)
+	forgetLater := func(workerID string) {
+		stoppedAt[workerID] = time.Now()
+		time.AfterFunc(forgetAfter, func() {
+			select {
+			case expired <- workerID:
+			case <-ctx.Done():
+			}
+		})
+	}
 	builds := map[string]*runtime.BuildOutput{}
 	targets := map[string]*runtime.BuildInput{}
 
@@ -575,6 +590,7 @@ func function(ctx context.Context, input input) {
 		stateMu.Lock()
 		workers[workerID] = info
 		stateMu.Unlock()
+		delete(stoppedAt, workerID)
 
 		return true
 	}
@@ -591,6 +607,7 @@ func function(ctx context.Context, input input) {
 	// error would otherwise fail the bridge's next invocation. With nothing
 	// queued, the invocation asks for the worker again when it arrives.
 	failedToStart := func(functionID string, workerID string, message string) {
+		forgetLater(workerID)
 		stateMu.Lock()
 		queued := len(nextChan[workerID])
 		delete(nextChan, workerID)
@@ -650,6 +667,8 @@ func function(ctx context.Context, input input) {
 			stateMu.Unlock()
 			if queued {
 				restart(info.FunctionID, workerID)
+			} else {
+				forgetLater(workerID)
 			}
 		}
 	}
@@ -850,8 +869,9 @@ func function(ctx context.Context, input input) {
 			stateMu.Lock()
 			existing, ok := workers[info.WorkerID]
 			// only delete if a new worker hasn't already been started
+			current := ok && existing == info
 			queued := false
-			if ok && existing == info {
+			if current {
 				log.Info("deleting worker", "workerID", info.WorkerID)
 				delete(workers, info.WorkerID)
 				// an invocation can be queued for a worker that's exiting, as it
@@ -867,6 +887,8 @@ func function(ctx context.Context, input input) {
 			stateMu.Unlock()
 			if queued {
 				restart(info.FunctionID, info.WorkerID)
+			} else if current {
+				forgetLater(info.WorkerID)
 			}
 			break
 		case info := <-replaced:
@@ -897,13 +919,33 @@ func function(ctx context.Context, input input) {
 			}
 			// A worker that sst dev has run before, as one that exited after a
 			// minute without work, or wasn't started again after a rebuild, is
-			// started with the environment its bridge sent then. Asking the bridge
-			// for it again takes a round trip.
+			// started with the environment its bridge sent then, until it's
+			// forgotten (see forgetAfter). Asking the bridge for it again takes a
+			// round trip.
 			if functionID, ok := workerFunction[workerID]; ok {
 				restart(functionID, workerID)
 				break
 			}
 			go askForReboot(workerID)
+		case workerID := <-expired:
+			// one that started again since, or stopped again, is forgotten later
+			if stopped, ok := stoppedAt[workerID]; !ok || time.Since(stopped) < forgetAfter {
+				break
+			}
+			log.Info("forgetting the environment of a worker that stopped", "workerID", workerID)
+			delete(stoppedAt, workerID)
+			delete(workerEnv, workerID)
+			delete(workerFunction, workerID)
+			if cloudLogs != nil {
+				cloudLogs.take(workerID)
+			}
+			// an invocation queued for it as it's forgotten asks its bridge for
+			// the environment again
+			stateMu.Lock()
+			if len(nextChan[workerID]) == 0 {
+				delete(nextChan, workerID)
+			}
+			stateMu.Unlock()
 		case unknown := <-evts:
 			switch evt := unknown.(type) {
 			case *FunctionInvokedEvent:
@@ -994,6 +1036,15 @@ const rebuildDelay = 100 * time.Millisecond
 // rebuild is left to finish it, when the invocation came without a deadline.
 // Lambda sends one, and its longest timeout is 15 minutes.
 var longestInvocation = 15 * time.Minute
+
+// forgetAfter is how long sst dev keeps the environment of a worker that
+// stopped, as when it exited after a minute without work, to start it again
+// without asking its bridge. Lambda keeps making new environments for a
+// function and removing idle ones, so a long session sees thousands, and
+// keeping each one's variables for good grows sst dev's memory with every
+// one. An environment invoked again after this is asked for its variables
+// again, which takes a round trip.
+var forgetAfter = 15 * time.Minute
 
 type functionBuild struct {
 	FunctionID string

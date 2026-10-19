@@ -1,0 +1,165 @@
+package aws
+
+import (
+	"fmt"
+	"runtime"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/sst/sst/v3/cmd/sst/mosaic/watcher"
+	"github.com/sst/sst/v3/pkg/bus"
+)
+
+// forgetSoon makes sst dev forget the environment of a worker that stopped
+// after d, for the test. It's called before newHarness, so it's set back once
+// the loop has stopped.
+func forgetSoon(t *testing.T, d time.Duration) {
+	old := forgetAfter
+	forgetAfter = d
+	t.Cleanup(func() { forgetAfter = old })
+}
+
+// Lambda keeps making new execution environments for a function, and removes
+// idle ones, so over a long session sst dev sees thousands. What it knows about
+// each, its environment variables among them, is forgotten a while after its
+// worker exits, or its memory grows with every one.
+func TestFunctionForgetsEnvironmentsThatAreGone(t *testing.T) {
+	forgetSoon(t, 100*time.Millisecond)
+	h := newHarness(t, &fakeRuntime{handle: echo, idle: 20 * time.Millisecond})
+	h.addFunction("Fn")
+	// a Lambda environment's variables, as a bridge sends them, are a few KB
+	env := []string{"SST_RESOURCE_App=" + strings.Repeat("x", 10<<10)}
+
+	var before, after runtime.MemStats
+	runtime.GC()
+	runtime.ReadMemStats(&before)
+	for i := range 1000 {
+		b := h.bridgeWithEnv("Fn", env)
+		if _, err := b.invoke(fmt.Sprintf("%d", i)); err != nil {
+			t.Fatalf("environment %d: %v", i, err)
+		}
+		b.close()
+	}
+	// the workers exit on idle, and the replies stop being sent again
+	time.Sleep(replyResends*replyResendEvery + time.Second)
+	runtime.GC()
+	runtime.ReadMemStats(&after)
+	if grew, limit := int64(after.HeapAlloc)-int64(before.HeapAlloc), int64(3<<20); grew > limit {
+		t.Fatalf("1,000 environments that are gone hold %d MB, want under %d MB", grew>>20, limit>>20)
+	}
+}
+
+// The environment of a worker that exited is kept for a while, so the worker
+// starts again without asking its bridge, and then forgotten. A worker that
+// starts again in that time is kept for as long again once it exits.
+func TestEnvironmentIsForgottenAWhileAfterItsWorkerExits(t *testing.T) {
+	forgetSoon(t, time.Second)
+	h := newHarness(t, &fakeRuntime{handle: echo, idle: 50 * time.Millisecond})
+	h.addFunction("Fn")
+	b := h.bridge("Fn")
+	invoke := func(event string, wantAsked int32) {
+		t.Helper()
+		reboots := b.reboots.Load()
+		got, err := b.invoke(event)
+		if err != nil {
+			t.Fatalf("%s: %v", event, err)
+		}
+		if got != "echo "+event {
+			t.Fatalf("%s: got %q, want %q", event, got, "echo "+event)
+		}
+		if n := b.reboots.Load() - reboots; n != wantAsked {
+			t.Fatalf("%s: the bridge was asked for its environment %d times, want %d", event, n, wantAsked)
+		}
+	}
+	// the first can ask, when the invocation comes before the bridge said it's there
+	if _, err := b.invoke("first"); err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(600 * time.Millisecond)
+	invoke("kept", 0)
+	// a second after the first exit, but not after the second
+	time.Sleep(600 * time.Millisecond)
+	invoke("kept-again", 0)
+	time.Sleep(1500 * time.Millisecond)
+	invoke("forgotten", 1)
+}
+
+// A worker that's running when the time its environment is kept for is up,
+// started again since it exited, keeps it.
+func TestEnvironmentOfARunningWorkerIsKept(t *testing.T) {
+	forgetSoon(t, time.Second)
+	h := newHarness(t, &fakeRuntime{handle: echo, idle: 800 * time.Millisecond})
+	h.addFunction("Fn")
+	b := h.bridge("Fn")
+	if _, err := b.invoke("first"); err != nil {
+		t.Fatal(err)
+	}
+	reboots := b.reboots.Load()
+	// it exits after 0.8 s, and runs again from 1.3 s to 2.1 s, past 1.8 s
+	time.Sleep(1300 * time.Millisecond)
+	if _, err := b.invoke("running"); err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(1100 * time.Millisecond)
+	if _, err := b.invoke("after"); err != nil {
+		t.Fatal(err)
+	}
+	if n := b.reboots.Load() - reboots; n > 0 {
+		t.Fatalf("the bridge was asked for its environment %d times, when it was kept", n)
+	}
+}
+
+// A worker that isn't started again after a rebuild, as only the one invoked
+// last is, has its environment forgotten as well.
+func TestEnvironmentNotStartedAfterARebuildIsForgotten(t *testing.T) {
+	forgetSoon(t, 500*time.Millisecond)
+	h := newHarness(t, &fakeRuntime{rebuild: true, handle: echo})
+	h.addFunction("Fn")
+	idle, last := h.bridge("Fn"), h.bridge("Fn")
+	for _, b := range []*fakeBridge{idle, last} {
+		if _, err := b.invoke("x"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	reboots := idle.reboots.Load()
+	bus.Publish(&watcher.FileChangedEvent{Path: "src/handler.ts"})
+	time.Sleep(time.Second)
+
+	got, err := idle.invoke("y")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != "echo y" {
+		t.Fatalf("got %q, want %q", got, "echo y")
+	}
+	if n := idle.reboots.Load() - reboots; n != 1 {
+		t.Fatalf("the bridge was asked for its environment %d times, want once, as it was forgotten", n)
+	}
+}
+
+// The environment of a worker that failed to start is forgotten as well.
+func TestEnvironmentOfAWorkerThatFailedToStartIsForgotten(t *testing.T) {
+	forgetSoon(t, 500*time.Millisecond)
+	h := newHarness(t, &fakeRuntime{handle: echo})
+	h.runtime.failRuns.Store(true)
+	h.addFunction("Fn")
+	b := h.bridge("Fn")
+	if _, err := b.invoke("x"); err == nil || !strings.Contains(err.Error(), "function failed to start") {
+		t.Fatalf("invoke() = %v, want the init error", err)
+	}
+	h.runtime.failRuns.Store(false)
+	reboots := b.reboots.Load()
+	time.Sleep(time.Second)
+
+	got, err := b.invoke("y")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != "echo y" {
+		t.Fatalf("got %q, want %q", got, "echo y")
+	}
+	if n := b.reboots.Load() - reboots; n != 1 {
+		t.Fatalf("the bridge was asked for its environment %d times, want once, as it was forgotten", n)
+	}
+}
