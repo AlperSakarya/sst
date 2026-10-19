@@ -678,6 +678,9 @@ func function(ctx context.Context, input input) {
 
 	// stopWhenDone stops a worker whose function is rebuilt. One that's running
 	// an invocation is left to finish it, until its deadline, and then replaced.
+	// It goes on running from the build's folder, which the new build is written
+	// into, so what it loads after it started, as a module imported on use, can
+	// come from the new build.
 	stopWhenDone := func(info *WorkerInfo) {
 		stateMu.Lock()
 		busy := info.Busy

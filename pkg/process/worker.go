@@ -60,9 +60,8 @@ func StartWorker(cmd *exec.Cmd) (*Worker, error) {
 	err := cmd.Start()
 	// the process has its own copies
 	closeFiles(writers)
-	// it's tracked as a worker from here, for Cleanup to stop with its group
-	untrackCommand(cmd)
 	if err != nil {
+		untrackCommand(cmd)
 		closeFiles(readers)
 		return nil, err
 	}
@@ -72,9 +71,12 @@ func StartWorker(cmd *exec.Cmd) (*Worker, error) {
 		exited: make(chan struct{}),
 		done:   make(chan struct{}),
 	}
+	// it's tracked as a worker from here, for Cleanup to stop with its group,
+	// and as a command until then
 	workersLock.Lock()
 	workers[w] = struct{}{}
 	workersLock.Unlock()
+	untrackCommand(cmd)
 	go func() {
 		cmd.Wait()
 		close(w.exited)
