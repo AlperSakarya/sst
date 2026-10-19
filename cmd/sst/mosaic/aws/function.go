@@ -528,35 +528,53 @@ func function(ctx context.Context, input input) {
 		return true
 	}
 
-	// restart starts a worker again for the invocations queued for it. If it
-	// can't start, as when its build fails, the queue is dropped and the bridge
-	// sent an init error, so the invocation fails now instead of at Lambda's
-	// timeout, and isn't handed to the next worker the bridge gets.
-	restart := func(functionID string, workerID string) {
-		log.Info("starting worker again for its queued invocations", "workerID", workerID)
-		if startWorker(functionID, workerID) {
-			return
-		}
+	// failedToStart tells the bridge of a worker that couldn't start, as when
+	// its build failed, with an init error, so its invocation fails now instead
+	// of at Lambda's timeout. The worker's queue is dropped, so the invocation
+	// isn't handed to the next worker the bridge gets.
+	//
+	// A bridge takes any init error as its invocation's, so one is sent only
+	// when an invocation is queued, which its bridge is waiting on. A worker can
+	// fail to start twice for one invocation, as when the invocation arrived
+	// first and the bridge was asked to start it again, and the second init
+	// error would otherwise fail the bridge's next invocation. With nothing
+	// queued, the invocation asks for the worker again when it arrives.
+	failedToStart := func(functionID string, workerID string, message string) {
 		stateMu.Lock()
+		queued := len(nextChan[workerID])
 		delete(nextChan, workerID)
 		stateMu.Unlock()
+		if queued == 0 {
+			log.Info("worker didn't start, with nothing queued for it", "workerID", workerID)
+			return
+		}
 		// the worker is gone, so the init error handler can't say whose it is
 		bus.Publish(&FunctionErrorEvent{
 			FunctionID:   functionID,
 			WorkerID:     workerID,
-			ErrorMessage: "Function failed to start",
+			ErrorMessage: message,
 		})
+		body, _ := json.Marshal(map[string]string{"errorMessage": message})
 		// sent from its own goroutine, as the handler publishes it to AppSync,
 		// and the loop doesn't wait on that
 		go func() {
 			client := http.Client{Timeout: 10 * time.Second}
-			result, err := client.Post("http://"+server+workerID+"/2018-06-01/runtime/init/error", "application/json", strings.NewReader(`{"errorMessage":"Function failed to start"}`))
+			result, err := client.Post("http://"+server+workerID+"/2018-06-01/runtime/init/error", "application/json", bytes.NewReader(body))
 			if err != nil {
 				log.Error("failed to report a worker that didn't start", "workerID", workerID, "err", err)
 				return
 			}
 			result.Body.Close()
 		}()
+	}
+
+	// restart starts a worker again for the invocations queued for it.
+	restart := func(functionID string, workerID string) {
+		log.Info("starting worker again for its queued invocations", "workerID", workerID)
+		if startWorker(functionID, workerID) {
+			return
+		}
+		failedToStart(functionID, workerID, "Function failed to start")
 	}
 
 	restartOrDeferWorker := func(workerID string, info *WorkerInfo) {
@@ -695,34 +713,7 @@ func function(ctx context.Context, input input) {
 				workerEnv[workerID] = init.Environment
 				workerFunction[workerID] = init.FunctionID
 				if ok := startWorker(init.FunctionID, workerID); !ok {
-					result, err := http.Post("http://"+server+workerID+"/runtime/init/error", "application/json", strings.NewReader(`{"errorMessage":"Function failed to build"}`))
-					if err != nil {
-						continue
-					}
-					defer result.Body.Close()
-					body, err := io.ReadAll(result.Body)
-					if err != nil {
-						continue
-					}
-					log.Info("error", "body", string(body), "status", result.StatusCode)
-
-					if result.StatusCode != 202 {
-						result, err := http.Get("http://" + server + workerID + "/runtime/invocation/next")
-						if err != nil {
-							continue
-						}
-						requestID := result.Header.Get("lambda-runtime-aws-request-id")
-						result, err = http.Post("http://"+server+workerID+"/runtime/invocation/"+requestID+"/error", "application/json", strings.NewReader(`{"errorMessage":"Function failed to build"}`))
-						if err != nil {
-							continue
-						}
-						defer result.Body.Close()
-						body, err := io.ReadAll(result.Body)
-						if err != nil {
-							continue
-						}
-						log.Info("error", "body", string(body), "status", result.StatusCode)
-					}
+					failedToStart(init.FunctionID, workerID, "Function failed to build")
 				}
 			}
 
