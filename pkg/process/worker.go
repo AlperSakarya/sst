@@ -49,6 +49,7 @@ func StartWorker(cmd *exec.Cmd) (*Worker, error) {
 	for range 2 {
 		r, w, err := os.Pipe()
 		if err != nil {
+			untrackCommand(cmd)
 			closeFiles(readers)
 			closeFiles(writers)
 			return nil, err

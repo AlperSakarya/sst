@@ -380,7 +380,7 @@ func (r *Runtime) Match(runtime string) bool {
 	return strings.HasPrefix(runtime, "node")
 }
 
-// ShouldRunEagerly returns true for Node.js - workers restart immediately after rebuild.
+// ShouldRunEagerly returns true for Node.js - the worker invoked last restarts immediately after rebuild.
 // Node.js uses esbuild's metafile for precise per-function dependency tracking,
 // so only functions that actually import a changed file will rebuild.
 func (r *Runtime) ShouldRunEagerly() bool {

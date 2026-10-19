@@ -18,6 +18,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -241,8 +242,36 @@ type harness struct {
 	envs          atomic.Int32
 }
 
+// testLog keeps what sst dev logs during a test, to print if it fails.
+type testLog struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (l *testLog) Write(p []byte) (int, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.buf.Write(p)
+}
+
+func (l *testLog) String() string {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.buf.String()
+}
+
 func newHarness(t *testing.T, rt *fakeRuntime) *harness {
 	t.Helper()
+	// registered first, so it runs after the loop has stopped
+	logs := &testLog{}
+	previous := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(logs, nil)))
+	t.Cleanup(func() {
+		slog.SetDefault(previous)
+		if t.Failed() {
+			t.Logf("what sst dev logged:\n%s", logs.String())
+		}
+	})
 	mux := http.NewServeMux()
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)

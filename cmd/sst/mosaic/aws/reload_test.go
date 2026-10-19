@@ -171,11 +171,20 @@ func TestReloadReplacesAWorkerAtItsDeadline(t *testing.T) {
 	if _, err := b.invoke("warm"); err != nil {
 		t.Fatal(err)
 	}
-	go b.invoke("hang")
+	// the invocation that hangs times out in Lambda, which then hands the
+	// environment its next one. A bridge runs one invocation at a time.
+	h.invokeTimeout = time.Second
+	hung := make(chan error, 1)
+	go func() {
+		_, err := b.invoke("hang")
+		hung <- err
+	}()
 	<-running
 	bus.Publish(&watcher.FileChangedEvent{Path: "src/handler.ts"})
-	// the invocation that hangs times out in Lambda
-	time.Sleep(1500 * time.Millisecond)
+	if err := <-hung; err != errNoReply {
+		t.Fatalf("the invocation that hangs ended with %v, want %v", err, errNoReply)
+	}
+	h.invokeTimeout = 5 * time.Second
 
 	if got, err := b.invoke("next"); err != nil || got != "echo next" {
 		t.Fatalf("got %q, %v, want %q", got, err, "echo next")
@@ -277,10 +286,18 @@ func TestReloadReplacesAWorkerWithoutADeadline(t *testing.T) {
 	if _, err := b.invoke("warm"); err != nil {
 		t.Fatal(err)
 	}
-	go b.invoke("hang")
+	h.invokeTimeout = time.Second
+	hung := make(chan error, 1)
+	go func() {
+		_, err := b.invoke("hang")
+		hung <- err
+	}()
 	<-running
 	bus.Publish(&watcher.FileChangedEvent{Path: "src/handler.ts"})
-	time.Sleep(1500 * time.Millisecond)
+	if err := <-hung; err != errNoReply {
+		t.Fatalf("the invocation that hangs ended with %v, want %v", err, errNoReply)
+	}
+	h.invokeTimeout = 5 * time.Second
 
 	if got, err := b.invoke("next"); err != nil || got != "echo next" {
 		t.Fatalf("got %q, %v, want %q", got, err, "echo next")
