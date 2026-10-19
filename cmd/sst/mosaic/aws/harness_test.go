@@ -24,6 +24,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -93,6 +94,8 @@ type fakeRuntime struct {
 	// and held is sent the function when its build is held
 	builds map[string]chan struct{}
 	held   chan string
+	// rebuild, when set, rebuilds every function on any file change
+	rebuild bool
 
 	starts atomic.Int32
 	// failRuns makes starting a worker fail, as when its runtime can't run it
@@ -137,7 +140,7 @@ func (r *fakeRuntime) Run(ctx context.Context, input *runtime.RunInput) (runtime
 	return w, nil
 }
 
-func (r *fakeRuntime) ShouldRebuild(functionID string, path string) bool { return false }
+func (r *fakeRuntime) ShouldRebuild(functionID string, path string) bool { return r.rebuild }
 
 func (r *fakeRuntime) ShouldRunEagerly() bool { return !r.lazy }
 
@@ -201,6 +204,13 @@ func (w *fakeWorker) run(ctx context.Context, output *io.PipeWriter) {
 		cancel()
 		requestID := resp.Header.Get("lambda-runtime-aws-request-id")
 		answer := w.runtime.handle(string(event))
+		select {
+		case <-w.stop:
+			// a worker that's stopped while it runs an invocation is killed, so
+			// it never answers
+			return
+		default:
+		}
 		if w.runtime.prints != "" {
 			fmt.Fprintln(output, w.runtime.prints)
 		}
@@ -310,6 +320,10 @@ type fakeBridge struct {
 	requests   atomic.Int32
 	// pinged is sent to when sst dev pings the bridge
 	pinged chan struct{}
+	// reboots counts the times sst dev asked the bridge to say it's there again
+	reboots atomic.Int32
+	// deadline, when set, is how long Lambda gives each invocation
+	deadline time.Duration
 }
 
 // bridge starts a bridge for the function, which tells sst dev it's there.
@@ -348,6 +362,9 @@ func (b *fakeBridge) invoke(event string) (string, error) {
 		Body:          io.NopCloser(strings.NewReader(event)),
 		ContentLength: int64(len(event)),
 	}
+	if b.deadline > 0 {
+		resp.Header.Set("Lambda-Runtime-Deadline-Ms", strconv.FormatInt(time.Now().Add(b.deadline).UnixMilli(), 10))
+	}
 	var next bytes.Buffer
 	if err := resp.Write(&next); err != nil {
 		return "", err
@@ -371,6 +388,7 @@ func (b *fakeBridge) invoke(event string) (string, error) {
 				timeout, timedOut = b.h.invokeTimeout, errNoReply
 				b.pinged <- struct{}{}
 			case bridge.MessageReboot:
+				b.reboots.Add(1)
 				b.init()
 			case bridge.MessageResponse, bridge.MessageError:
 				if msg.ID != requestID {

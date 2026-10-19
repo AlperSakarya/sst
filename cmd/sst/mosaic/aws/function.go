@@ -8,11 +8,11 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
-	"maps"
 	"net/http"
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -86,6 +86,17 @@ func function(ctx context.Context, input input) {
 		// Polled is whether the worker has asked for an invocation, so it
 		// started. One that exits before then failed as it started.
 		Polled bool
+		// Busy is whether the worker is running an invocation: it was handed
+		// one, and hasn't asked for the next. Deadline is when that times out,
+		// and LastInvoked when it was handed it.
+		Busy        bool
+		Deadline    time.Time
+		LastInvoked time.Time
+		// Outdated is whether its function was rebuilt while it ran an
+		// invocation. It's replaced once it's done with it, and the new worker
+		// starts then if Eager, as the function's worker invoked last.
+		Outdated bool
+		Eager    bool
 	}
 	workerShutdownChan := make(chan *WorkerInfo, 1000)
 	nextChan := map[string]chan io.Reader{}
@@ -104,13 +115,6 @@ func function(ctx context.Context, input input) {
 			nextChan[workerID] = ch
 		}
 		return ch
-	}
-	// workersNow copies the workers, for a loop over them that starts them
-	// again, which changes the map as it goes
-	workersNow := func() map[string]*WorkerInfo {
-		stateMu.Lock()
-		defer stateMu.Unlock()
-		return maps.Clone(workers)
 	}
 	loadWorker := func(workerID string) (*WorkerInfo, bool) {
 		stateMu.Lock()
@@ -208,9 +212,24 @@ func function(ctx context.Context, input input) {
 			cancel()
 		}()
 	}
-	// a worker whose invocation was put back in its queue, for the loop to start
-	// it again if it's gone
+	// a worker with an invocation queued that may be gone, for the loop to start
+	// it again
 	requeued := make(chan string, 100)
+	requeue := func(workerID string) {
+		select {
+		case requeued <- workerID:
+		case <-ctx.Done():
+		}
+	}
+	// a worker that's done with the invocation it ran through a rebuild, or ran
+	// past its deadline, for the loop to replace with one of the new build
+	replaced := make(chan *WorkerInfo, 100)
+	replace := func(info *WorkerInfo) {
+		select {
+		case replaced <- info:
+		case <-ctx.Done():
+		}
+	}
 	// sendLogs sends the bridge what the worker printed up to a reply, after it,
 	// so the reply isn't held up. It's sent when there's nothing too, so the
 	// bridge stops waiting. A copy arrives after the bridge has stopped waiting,
@@ -251,10 +270,21 @@ func function(ctx context.Context, input input) {
 		// it starts, doesn't count. It still takes what's queued, and the
 		// worker asks again once it has answered, which does.
 		stateMu.Lock()
-		if info, ok := workers[workerID]; ok {
+		info, ok := workers[workerID]
+		if ok {
 			info.Polled = true
+			info.Busy = false
 		}
+		outdated := ok && info.Outdated
 		stateMu.Unlock()
+		if outdated {
+			// it doesn't take another, as its function was rebuilt, and it's
+			// stopped
+			log.Info("worker done with its invocation through a rebuild", "workerID", workerID)
+			go replace(info)
+			<-r.Context().Done()
+			return
+		}
 		ch := loadNextChan(workerID)
 		select {
 		case <-r.Context().Done():
@@ -268,17 +298,22 @@ func function(ctx context.Context, input input) {
 				queueNext(workerID, reader)
 				// the loop can be busy building, and the worker's runtime doesn't
 				// wait for this
-				go func() {
-					select {
-					case requeued <- workerID:
-					case <-ctx.Done():
-					}
-				}()
+				go requeue(workerID)
 				return
 			}
 			log.Info("worker got next request", "workerID", workerID)
 			resp, _ := http.ReadResponse(bufio.NewReader(reader), r)
 			requestID := resp.Header.Get("lambda-runtime-aws-request-id")
+			stateMu.Lock()
+			if info, ok := workers[workerID]; ok {
+				info.Busy = true
+				info.LastInvoked = time.Now()
+				info.Deadline = time.Time{}
+				if ms, err := strconv.ParseInt(resp.Header.Get("lambda-runtime-deadline-ms"), 10, 64); err == nil {
+					info.Deadline = time.UnixMilli(ms)
+				}
+			}
+			stateMu.Unlock()
 			for key, values := range resp.Header {
 				for _, value := range values {
 					w.Header().Add(key, value)
@@ -559,12 +594,14 @@ func function(ctx context.Context, input input) {
 		}()
 	}
 
-	restartOrDeferWorker := func(workerID string, info *WorkerInfo) {
+	// restartOrDeferWorker starts a worker again after its function was built,
+	// or, when it isn't to start eagerly, once it's next invoked
+	restartOrDeferWorker := func(workerID string, info *WorkerInfo, eager bool) {
 		target, ok := targets[info.FunctionID]
 		if !ok {
 			return
 		}
-		if input.project.Runtime.ShouldRunEagerly(target.Runtime) {
+		if eager && input.project.Runtime.ShouldRunEagerly(target.Runtime) {
 			startWorker(info.FunctionID, workerID)
 		} else {
 			log.Info("lazy startup: deferring worker restart until invoked", "workerID", workerID, "functionID", info.FunctionID)
@@ -599,10 +636,15 @@ func function(ctx context.Context, input input) {
 		if queueNext(msg.Source, msg.Body) {
 			return
 		}
-		log.Info("asking for reboot", "workerID", msg.Source)
-		writer := input.client.NewWriter(bridge.MessageReboot, input.prefix+"/"+msg.Source+"/in")
+		requeue(msg.Source)
+	}
+	// askForReboot asks a bridge to send its environment again, for sst dev to
+	// start its worker with
+	askForReboot := func(workerID string) {
+		log.Info("asking for reboot", "workerID", workerID)
+		writer := input.client.NewWriter(bridge.MessageReboot, input.prefix+"/"+workerID+"/in")
 		if err := sendJSON(writer, bridge.RebootBody{}); err != nil {
-			log.Error("failed to send reboot", "workerID", msg.Source, "err", err)
+			log.Error("failed to send reboot", "workerID", workerID, "err", err)
 		}
 	}
 	loopMsg := make(chan bridge.Message, 1000)
@@ -634,6 +676,59 @@ func function(ctx context.Context, input input) {
 	changed := map[string]bool{}
 	var rebuildChanged <-chan time.Time
 
+	// stopWhenDone stops a worker whose function is rebuilt. One that's running
+	// an invocation is left to finish it, until its deadline, and then replaced.
+	stopWhenDone := func(info *WorkerInfo) {
+		stateMu.Lock()
+		busy := info.Busy
+		if busy {
+			info.Outdated = true
+		}
+		deadline := info.Deadline
+		stateMu.Unlock()
+		if !busy {
+			log.Info("stopping", "workerID", info.WorkerID, "functionID", info.FunctionID)
+			info.Worker.Stop()
+			return
+		}
+		log.Info("rebuilt while running an invocation, replacing it once it's done", "workerID", info.WorkerID, "functionID", info.FunctionID)
+		if !deadline.IsZero() {
+			time.AfterFunc(time.Until(deadline), func() { replace(info) })
+		}
+	}
+
+	// restartAfterBuild starts again, of each function that was built, the
+	// worker invoked last, which is likely to be invoked next. The others start
+	// when they're invoked, so a save doesn't start a worker for every
+	// environment of a function at once. One that's still running an
+	// invocation is replaced once it's done.
+	restartAfterBuild := func(built func(functionID string) bool) {
+		stateMu.Lock()
+		last := map[string]*WorkerInfo{}
+		toRestart := map[string]*WorkerInfo{}
+		for workerID, info := range workers {
+			if !built(info.FunctionID) {
+				continue
+			}
+			if latest, ok := last[info.FunctionID]; !ok || info.LastInvoked.After(latest.LastInvoked) {
+				last[info.FunctionID] = info
+			}
+			if info.Outdated {
+				continue
+			}
+			toRestart[workerID] = info
+		}
+		for _, info := range last {
+			if info.Outdated {
+				info.Eager = true
+			}
+		}
+		stateMu.Unlock()
+		for workerID, info := range toRestart {
+			restartOrDeferWorker(workerID, info, last[info.FunctionID] == info)
+		}
+	}
+
 	rebuild := func(paths map[string]bool) {
 		toBuild := []*runtime.BuildInput{}
 		for functionID := range builds {
@@ -647,8 +742,7 @@ func function(ctx context.Context, input input) {
 				}
 				for _, worker := range workers {
 					if worker.FunctionID == functionID {
-						log.Info("stopping", "workerID", worker.WorkerID, "functionID", worker.FunctionID)
-						worker.Worker.Stop()
+						stopWhenDone(worker)
 					}
 				}
 				delete(builds, functionID)
@@ -665,11 +759,7 @@ func function(ctx context.Context, input input) {
 		for _, target := range toBuild {
 			rebuilt[target.FunctionID] = !failed[target.FunctionID]
 		}
-		for workerID, info := range workersNow() {
-			if rebuilt[info.FunctionID] {
-				restartOrDeferWorker(workerID, info)
-			}
-		}
+		restartAfterBuild(func(functionID string) bool { return rebuilt[functionID] })
 	}
 
 	for {
@@ -755,15 +845,35 @@ func function(ctx context.Context, input input) {
 				restart(info.FunctionID, info.WorkerID)
 			}
 			break
+		case info := <-replaced:
+			stateMu.Lock()
+			current := workers[info.WorkerID] == info
+			eager := info.Eager
+			stateMu.Unlock()
+			// it may have been replaced already, or exited
+			if !current {
+				break
+			}
+			log.Info("stopping", "workerID", info.WorkerID, "functionID", info.FunctionID)
+			info.Worker.Stop()
+			restartOrDeferWorker(info.WorkerID, info, eager)
 		case workerID := <-requeued:
 			stateMu.Lock()
 			_, running := workers[workerID]
 			queued := len(nextChan[workerID]) > 0
 			stateMu.Unlock()
-			functionID, ok := workerFunction[workerID]
-			if !running && queued && ok {
-				restart(functionID, workerID)
+			if running || !queued {
+				break
 			}
+			// A worker that sst dev has run before, as one that exited after a
+			// minute without work, or wasn't started again after a rebuild, is
+			// started with the environment its bridge sent then. Asking the bridge
+			// for it again takes a round trip.
+			if functionID, ok := workerFunction[workerID]; ok {
+				restart(functionID, workerID)
+				break
+			}
+			go askForReboot(workerID)
 		case unknown := <-evts:
 			switch evt := unknown.(type) {
 			case *FunctionInvokedEvent:
@@ -779,7 +889,7 @@ func function(ctx context.Context, input input) {
 					continue
 				}
 				for _, info := range workers {
-					info.Worker.Stop()
+					stopWhenDone(info)
 				}
 				builds = map[string]*runtime.BuildOutput{}
 				// the functions whose workers start again now are built at once,
@@ -793,11 +903,7 @@ func function(ctx context.Context, input input) {
 					toBuild = append(toBuild, target)
 				}
 				failed := buildEach(toBuild)
-				for workerID, info := range workersNow() {
-					if !failed[info.FunctionID] {
-						restartOrDeferWorker(workerID, info)
-					}
-				}
+				restartAfterBuild(func(functionID string) bool { return !failed[functionID] })
 			case *runtime.BuildInput:
 				targets[evt.FunctionID] = evt
 			case *watcher.FileChangedEvent:
