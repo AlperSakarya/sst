@@ -18,12 +18,14 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -80,6 +82,14 @@ func (f *fakeAppSync) PublishOverSocket(ctx context.Context, channel string, eve
 	return f.Publish(ctx, channel, event)
 }
 
+// unsubscribe removes the channel's subscribers, as when a bridge's Lambda
+// environment goes away.
+func (f *fakeAppSync) unsubscribe(channel string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	delete(f.subs, channel)
+}
+
 func (f *fakeAppSync) Subscribe(ctx context.Context, channel string) (chan string, error) {
 	sub := make(chan string, 1000)
 	f.mu.Lock()
@@ -109,6 +119,11 @@ type fakeRuntime struct {
 	// and held is sent the function when its build is held
 	builds map[string]chan struct{}
 	held   chan string
+	// rebuild, when set, rebuilds every function on any file change
+	rebuild bool
+	// stopDelay is how long a worker goes on asking for an invocation after
+	// it's stopped, as a process takes a moment to exit
+	stopDelay time.Duration
 
 	starts atomic.Int32
 	// failRuns makes starting a worker fail, as when its runtime can't run it
@@ -153,7 +168,7 @@ func (r *fakeRuntime) Run(ctx context.Context, input *runtime.RunInput) (runtime
 	return w, nil
 }
 
-func (r *fakeRuntime) ShouldRebuild(functionID string, path string) bool { return false }
+func (r *fakeRuntime) ShouldRebuild(functionID string, path string) bool { return r.rebuild }
 
 func (r *fakeRuntime) ShouldRunEagerly() bool { return !r.lazy }
 
@@ -199,6 +214,7 @@ func (w *fakeWorker) run(ctx context.Context, output *io.PipeWriter) {
 		go func() {
 			select {
 			case <-w.stop:
+				time.Sleep(w.runtime.stopDelay)
 				cancel()
 			case <-next.Done():
 			}
@@ -217,6 +233,13 @@ func (w *fakeWorker) run(ctx context.Context, output *io.PipeWriter) {
 		cancel()
 		requestID := resp.Header.Get("lambda-runtime-aws-request-id")
 		answer := w.runtime.handle(string(event))
+		select {
+		case <-w.stop:
+			// a worker that's stopped while it runs an invocation is killed, so
+			// it never answers
+			return
+		default:
+		}
 		if w.runtime.prints != "" {
 			fmt.Fprintln(output, w.runtime.prints)
 		}
@@ -245,6 +268,23 @@ type harness struct {
 
 func newHarness(t *testing.T, rt *fakeRuntime) *harness {
 	t.Helper()
+	// What sst dev logs is kept, to print if the test fails. It's kept in a
+	// file, so the tests of what sst dev holds in memory don't count it.
+	logs, err := os.Create(filepath.Join(t.TempDir(), "sst.log"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	previous := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(logs, nil)))
+	// registered before the loop's, so it runs after the loop has stopped
+	t.Cleanup(func() {
+		slog.SetDefault(previous)
+		logs.Close()
+		if t.Failed() {
+			logged, _ := os.ReadFile(logs.Name())
+			t.Logf("what sst dev logged:\n%s", logged)
+		}
+	})
 	mux := http.NewServeMux()
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
@@ -322,29 +362,49 @@ type fakeBridge struct {
 	h          *harness
 	functionID string
 	workerID   string
+	env        []string
 	client     *bridge.Client
+	cancel     context.CancelFunc
 	requests   atomic.Int32
 	// pinged is sent to when sst dev pings the bridge
 	pinged chan struct{}
+	// reboots counts the times sst dev asked the bridge to say it's there again
+	reboots atomic.Int32
+	// deadline, when set, is how long Lambda gives each invocation
+	deadline time.Duration
 }
 
 // bridge starts a bridge for the function, which tells sst dev it's there.
 func (h *harness) bridge(functionID string) *fakeBridge {
+	return h.bridgeWithEnv(functionID, []string{})
+}
+
+// bridgeWithEnv starts a bridge whose Lambda environment has the variables.
+func (h *harness) bridgeWithEnv(functionID string, env []string) *fakeBridge {
 	workerID := fmt.Sprintf("%032d", h.envs.Add(1))
+	ctx, cancel := context.WithCancel(h.ctx)
 	b := &fakeBridge{
 		h:          h,
 		functionID: functionID,
 		workerID:   workerID,
-		client:     bridge.NewClient(h.ctx, h.appsync, workerID, h.prefix+"/"+workerID),
+		env:        env,
+		client:     bridge.NewClient(ctx, h.appsync, workerID, h.prefix+"/"+workerID),
+		cancel:     cancel,
 		pinged:     make(chan struct{}, 100),
 	}
 	b.init()
 	return b
 }
 
+// close stops the bridge, as when Lambda removes its environment.
+func (b *fakeBridge) close() {
+	b.cancel()
+	b.h.appsync.unsubscribe(b.h.prefix + "/" + b.workerID + "/in")
+}
+
 func (b *fakeBridge) init() {
 	writer := b.client.NewWriter(bridge.MessageInit, b.h.prefix+"/in")
-	if err := sendJSON(writer, bridge.InitBody{FunctionID: b.functionID, Environment: []string{}}); err != nil {
+	if err := sendJSON(writer, bridge.InitBody{FunctionID: b.functionID, Environment: b.env}); err != nil {
 		b.h.t.Error(err)
 	}
 }
@@ -363,6 +423,9 @@ func (b *fakeBridge) invoke(event string) (string, error) {
 		Header:        http.Header{"Lambda-Runtime-Aws-Request-Id": {requestID}},
 		Body:          io.NopCloser(strings.NewReader(event)),
 		ContentLength: int64(len(event)),
+	}
+	if b.deadline > 0 {
+		resp.Header.Set("Lambda-Runtime-Deadline-Ms", strconv.FormatInt(time.Now().Add(b.deadline).UnixMilli(), 10))
 	}
 	var next bytes.Buffer
 	if err := resp.Write(&next); err != nil {
@@ -387,6 +450,7 @@ func (b *fakeBridge) invoke(event string) (string, error) {
 				timeout, timedOut = b.h.invokeTimeout, errNoReply
 				b.pinged <- struct{}{}
 			case bridge.MessageReboot:
+				b.reboots.Add(1)
 				b.init()
 			case bridge.MessageResponse, bridge.MessageError:
 				if msg.ID != requestID {
