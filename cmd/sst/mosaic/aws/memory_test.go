@@ -12,8 +12,9 @@ import (
 )
 
 // forgetSoon makes sst dev forget the environment of a worker that stopped
-// after d, for the test. It's called before newHarness, so it's set back once
-// the loop has stopped.
+// after d, for the test. The loop reads it as it starts, so it's called before
+// newHarness, and set back once the loop has stopped. That holds only because
+// the tests that use the harness don't run in parallel.
 func forgetSoon(t *testing.T, d time.Duration) {
 	old := forgetAfter
 	forgetAfter = d
@@ -119,7 +120,9 @@ func TestInvocationAsItsEnvironmentIsForgotten(t *testing.T) {
 	release := make(chan struct{})
 	h := newHarness(t, &fakeRuntime{
 		handle: echo,
-		idle:   20 * time.Millisecond,
+		// long enough for a worker started under load to ask for its
+		// invocation before it exits on idle
+		idle:   100 * time.Millisecond,
 		builds: map[string]chan struct{}{"Slow": release},
 		held:   make(chan string, 1),
 	})
@@ -134,7 +137,7 @@ func TestInvocationAsItsEnvironmentIsForgotten(t *testing.T) {
 	}
 	// the workers exit on idle, and then the loop builds Slow until it's
 	// released
-	time.Sleep(200 * time.Millisecond)
+	time.Sleep(300 * time.Millisecond)
 	h.bridge("Slow")
 	<-h.runtime.held
 	time.Sleep(500 * time.Millisecond)

@@ -454,19 +454,11 @@ func function(ctx context.Context, input input) {
 	workerFunction := map[string]string{}
 	// When each worker that isn't running stopped: it exited, wasn't started
 	// again after a rebuild, or failed to start. Its environment is forgotten
-	// forgetAfter later, unless it started again, and expired tells the loop
-	// when. Like workerEnv, it's only used by the loop, so it isn't under
-	// stateMu.
+	// once it has been stopped for forgetAfter, unless it started again. Like
+	// workerEnv, it's only used by the loop, so it isn't under stateMu.
 	stoppedAt := map[string]time.Time{}
-	expired := make(chan string, 100)
 	forgetLater := func(workerID string) {
 		stoppedAt[workerID] = time.Now()
-		time.AfterFunc(forgetAfter, func() {
-			select {
-			case expired <- workerID:
-			case <-ctx.Done():
-			}
-		})
 	}
 	builds := map[string]*runtime.BuildOutput{}
 	targets := map[string]*runtime.BuildInput{}
@@ -732,6 +724,10 @@ func function(ctx context.Context, input input) {
 	// later, and a function is built once for all of them.
 	changed := map[string]bool{}
 	var rebuildChanged <-chan time.Time
+	// What has been stopped for forgetAfter is forgotten at the next tick, so
+	// within a tenth of forgetAfter more.
+	forgetTick := time.NewTicker(forgetAfter / 10)
+	defer forgetTick.Stop()
 
 	// stopWhenDone stops a worker whose function is rebuilt. One that's running
 	// an invocation is left to finish it, until its deadline, and then replaced.
@@ -928,25 +924,26 @@ func function(ctx context.Context, input input) {
 				break
 			}
 			go askForReboot(workerID)
-		case workerID := <-expired:
-			// one that started again since, or stopped again, is forgotten later
-			if stopped, ok := stoppedAt[workerID]; !ok || time.Since(stopped) < forgetAfter {
-				break
+		case <-forgetTick.C:
+			for workerID, stopped := range stoppedAt {
+				if time.Since(stopped) < forgetAfter {
+					continue
+				}
+				log.Info("forgetting the environment of a worker that stopped", "workerID", workerID)
+				delete(stoppedAt, workerID)
+				delete(workerEnv, workerID)
+				delete(workerFunction, workerID)
+				if cloudLogs != nil {
+					cloudLogs.take(workerID)
+				}
+				// an invocation queued for it as it's forgotten asks its bridge
+				// for the environment again
+				stateMu.Lock()
+				if len(nextChan[workerID]) == 0 {
+					delete(nextChan, workerID)
+				}
+				stateMu.Unlock()
 			}
-			log.Info("forgetting the environment of a worker that stopped", "workerID", workerID)
-			delete(stoppedAt, workerID)
-			delete(workerEnv, workerID)
-			delete(workerFunction, workerID)
-			if cloudLogs != nil {
-				cloudLogs.take(workerID)
-			}
-			// an invocation queued for it as it's forgotten asks its bridge for
-			// the environment again
-			stateMu.Lock()
-			if len(nextChan[workerID]) == 0 {
-				delete(nextChan, workerID)
-			}
-			stateMu.Unlock()
 		case unknown := <-evts:
 			switch evt := unknown.(type) {
 			case *FunctionInvokedEvent:
