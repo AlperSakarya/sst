@@ -224,3 +224,20 @@ func TestDroppedMessageIsPassedOnWhenACopyComes(t *testing.T) {
 		t.Fatal("the whole copy of the dropped message wasn't passed on")
 	}
 }
+
+// A packet with no data is passed on as an empty chunk, not the nil that ends a
+// dropped message with an error, so a message whose last packet is empty ends
+// as usual.
+func TestMessageWithAnEmptyLastPacketEnds(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	conn := &fakeConn{sub: make(chan string, 10)}
+	client := NewClient(ctx, conn, "test", "test")
+	conn.sub <- packet("m", 0, "hello", false)
+	conn.sub <- packet("m", 1, "", true)
+	msg := <-client.Read()
+	body, err := io.ReadAll(msg.Body)
+	if err != nil || string(body) != "hello" {
+		t.Fatalf("read %q and %v, want %q and no error", body, err, "hello")
+	}
+}
