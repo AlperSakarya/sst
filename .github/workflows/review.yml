@@ -38,7 +38,7 @@ jobs:
     env:
       GH_REPO: ${{ github.repository }}
       PR: ${{ github.event.pull_request.number }}
-      MODEL: opencode/space-bunny-free
+      MODEL: opencode/deepseek-v4.1-flash-free
     steps:
       - name: Checkout main
         uses: actions/checkout@v4
