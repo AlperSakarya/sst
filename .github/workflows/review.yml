@@ -58,7 +58,7 @@ jobs:
       # models.dev. No token here either.
       - name: Refresh opencode's models
         continue-on-error: true
-        timeout-minutes: 2
+        timeout-minutes: 5
         run: npx -y "$OPENCODE" models opencode --refresh >/dev/null
 
       # No token here. A failure, such as the free model being unavailable,
