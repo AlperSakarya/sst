@@ -139,9 +139,11 @@ describe("Service with external ALB", function () {
       });
 
       // Service should use the ALB's URL
-      pulumi.all([service.url]).apply(([url]) => {
-        expect(url).toBeDefined();
-      });
+      const [url, albUrl] = await new Promise<string[]>((resolve) =>
+        pulumi.all([service.url, alb.url]).apply(resolve),
+      );
+      expect(url).toMatch(/^http:\/\/TestAlbLoadBala-/);
+      expect(url).toBe(albUrl);
     });
 
     it("creates service with standard loadBalancer (no ALB instance)", async () => {
@@ -388,7 +390,12 @@ describe("Service with external ALB", function () {
         },
       });
 
-      expect(service).toBeDefined();
+      // the referenced load balancer's
+      const [url, albUrl] = await new Promise<string[]>((resolve) =>
+        pulumi.all([service.url, refAlb.url]).apply(resolve),
+      );
+      expect(url).toMatch(/^http:\/\/RefAlbForServic-/);
+      expect(url).toBe(albUrl);
     });
   });
 });

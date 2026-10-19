@@ -123,7 +123,10 @@ describe("Alb", function () {
         listeners: [{ port: 80, protocol: "http" }],
       });
 
-      expect(alb.getListener("http", 80)).toBe(alb.getListener("http", 80));
+      // the one it made, which is among its nodes before it's asked for
+      const declared = alb.nodes.listeners["HTTP80"];
+      expect(declared).toBeDefined();
+      expect(alb.getListener("http", 80)).toBe(declared);
     });
 
     // A listener added to the load balancer some other way is read from AWS
@@ -137,6 +140,7 @@ describe("Alb", function () {
         listeners: [{ port: 80, protocol: "http" }],
       });
 
+      expect(alb.nodes.listeners["HTTPS443"]).toBeUndefined();
       const listener = alb.getListener("https", 443);
       const urn = await new Promise((resolve) => listener.urn.apply(resolve));
       expect(urn).toMatch(/::TestAlbMissingListenerHTTPS443$/);
