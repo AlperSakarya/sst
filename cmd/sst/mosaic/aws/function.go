@@ -565,6 +565,9 @@ func function(ctx context.Context, input input) {
 				return
 			}
 			result.Body.Close()
+			if result.StatusCode >= 300 {
+				log.Error("failed to report a worker that didn't start", "workerID", workerID, "status", result.StatusCode)
+			}
 		}()
 	}
 

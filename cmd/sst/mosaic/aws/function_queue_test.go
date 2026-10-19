@@ -263,8 +263,8 @@ func TestInvocationFailsWhenTheWorkerCantStart(t *testing.T) {
 	b := h.bridge("Fn")
 	start := time.Now()
 	_, err := b.invoke("x")
-	if err == nil || !strings.Contains(err.Error(), "function failed to start") {
-		t.Fatalf("invoke() = %v, want an init error", err)
+	if err == nil || !strings.Contains(err.Error(), "function failed to start") || !strings.Contains(err.Error(), "Function failed to build") {
+		t.Fatalf("invoke() = %v, want the init error for a build that failed", err)
 	}
 	if took := time.Since(start); took > 2*time.Second {
 		t.Fatalf("the init error took %v", took)
