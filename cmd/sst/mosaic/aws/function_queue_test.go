@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"slices"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -250,4 +251,28 @@ func TestBuildDoesNotHoldUpOtherFunctions(t *testing.T) {
 		}
 	}
 	close(slow)
+}
+
+// A function whose worker can't start, as when its build fails, fails its
+// invocation straight away with an init error, not at Lambda's timeout. The
+// next invocation, once the worker can start, runs.
+func TestInvocationFailsWhenTheWorkerCantStart(t *testing.T) {
+	h := newHarness(t, &fakeRuntime{handle: echo})
+	h.runtime.failRuns.Store(true)
+	h.addFunction("Fn")
+	b := h.bridge("Fn")
+	start := time.Now()
+	_, err := b.invoke("x")
+	if err == nil || !strings.Contains(err.Error(), "function failed to start") || !strings.Contains(err.Error(), "Function failed to build") {
+		t.Fatalf("invoke() = %v, want the init error for a build that failed", err)
+	}
+	if took := time.Since(start); took > 2*time.Second {
+		t.Fatalf("the init error took %v", took)
+	}
+
+	h.runtime.failRuns.Store(false)
+	got, err := b.invoke("y")
+	if err != nil || got != "echo y" {
+		t.Fatalf("invoke() after the worker can start = %q, %v, want its answer", got, err)
+	}
 }
