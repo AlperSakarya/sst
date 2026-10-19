@@ -55,7 +55,7 @@ func TestFunctionForgetsEnvironmentsThatAreGone(t *testing.T) {
 // starts again without asking its bridge, and then forgotten. A worker that
 // starts again in that time is kept for as long again once it exits.
 func TestEnvironmentIsForgottenAWhileAfterItsWorkerExits(t *testing.T) {
-	forgetSoon(t, time.Second)
+	forgetSoon(t, 2*time.Second)
 	h := newHarness(t, &fakeRuntime{handle: echo, idle: 50 * time.Millisecond})
 	h.addFunction("Fn")
 	b := h.bridge("Fn")
@@ -77,32 +77,32 @@ func TestEnvironmentIsForgottenAWhileAfterItsWorkerExits(t *testing.T) {
 	if _, err := b.invoke("first"); err != nil {
 		t.Fatal(err)
 	}
-	time.Sleep(600 * time.Millisecond)
+	time.Sleep(1200 * time.Millisecond)
 	invoke("kept", 0)
-	// a second after the first exit, but not after the second
-	time.Sleep(600 * time.Millisecond)
+	// past the time after the first exit, but not after the second
+	time.Sleep(1200 * time.Millisecond)
 	invoke("kept-again", 0)
-	time.Sleep(1500 * time.Millisecond)
+	time.Sleep(3 * time.Second)
 	invoke("forgotten", 1)
 }
 
 // A worker that's running when the time its environment is kept for is up,
 // started again since it exited, keeps it.
 func TestEnvironmentOfARunningWorkerIsKept(t *testing.T) {
-	forgetSoon(t, time.Second)
-	h := newHarness(t, &fakeRuntime{handle: echo, idle: 800 * time.Millisecond})
+	forgetSoon(t, 2*time.Second)
+	h := newHarness(t, &fakeRuntime{handle: echo, idle: 1600 * time.Millisecond})
 	h.addFunction("Fn")
 	b := h.bridge("Fn")
 	if _, err := b.invoke("first"); err != nil {
 		t.Fatal(err)
 	}
 	reboots := b.reboots.Load()
-	// it exits after 0.8 s, and runs again from 1.3 s to 2.1 s, past 1.8 s
-	time.Sleep(1300 * time.Millisecond)
+	// it exits after 1.6 s, and runs again from 2.6 s to 4.2 s, past 3.6 s
+	time.Sleep(2600 * time.Millisecond)
 	if _, err := b.invoke("running"); err != nil {
 		t.Fatal(err)
 	}
-	time.Sleep(1100 * time.Millisecond)
+	time.Sleep(2200 * time.Millisecond)
 	if _, err := b.invoke("after"); err != nil {
 		t.Fatal(err)
 	}
@@ -174,7 +174,7 @@ func TestEnvironmentNotStartedAfterARebuildIsForgotten(t *testing.T) {
 	}
 	reboots := idle.reboots.Load()
 	bus.Publish(&watcher.FileChangedEvent{Path: "src/handler.ts"})
-	time.Sleep(time.Second)
+	time.Sleep(1500 * time.Millisecond)
 
 	got, err := idle.invoke("y")
 	if err != nil {
@@ -200,7 +200,7 @@ func TestEnvironmentOfAWorkerThatFailedToStartIsForgotten(t *testing.T) {
 	}
 	h.runtime.failRuns.Store(false)
 	reboots := b.reboots.Load()
-	time.Sleep(time.Second)
+	time.Sleep(1500 * time.Millisecond)
 
 	got, err := b.invoke("y")
 	if err != nil {

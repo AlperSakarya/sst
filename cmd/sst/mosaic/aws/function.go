@@ -454,8 +454,10 @@ func function(ctx context.Context, input input) {
 	workerFunction := map[string]string{}
 	// When each worker that isn't running stopped: it exited, wasn't started
 	// again after a rebuild, or failed to start. Its environment is forgotten
-	// once it has been stopped for forgetAfter, unless it started again. Like
-	// workerEnv, it's only used by the loop, so it isn't under stateMu.
+	// once it has been stopped for forgetAfter, unless it started again. A
+	// worker in it is never in workers: startWorker takes it out as it records
+	// the worker. Like workerEnv, it's only used by the loop, so it isn't
+	// under stateMu.
 	stoppedAt := map[string]time.Time{}
 	forgetLater := func(workerID string) {
 		stoppedAt[workerID] = time.Now()
