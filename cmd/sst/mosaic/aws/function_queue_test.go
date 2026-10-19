@@ -251,3 +251,23 @@ func TestBuildDoesNotHoldUpOtherFunctions(t *testing.T) {
 	}
 	close(slow)
 }
+
+// A bridge asked for its init again, as when its first invocation was handled
+// before its init, sends it while its worker runs. It doesn't start another.
+func TestSecondInitForARunningWorker(t *testing.T) {
+	h := newHarness(t, &fakeRuntime{handle: echo})
+	h.addFunction("Fn")
+	b := h.bridge("Fn")
+	if _, err := b.invoke("x"); err != nil {
+		t.Fatal(err)
+	}
+	b.init()
+	time.Sleep(100 * time.Millisecond)
+	got, err := b.invoke("y")
+	if err != nil || got != "echo y" {
+		t.Fatalf("got %q, %v, want %q", got, err, "echo y")
+	}
+	if starts := h.runtime.starts.Load(); starts != 1 {
+		t.Fatalf("started %d workers, want 1", starts)
+	}
+}

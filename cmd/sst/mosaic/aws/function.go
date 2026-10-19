@@ -694,7 +694,7 @@ func function(ctx context.Context, input input) {
 				// printed, so this init finds the worker the first init started.
 				// Nothing is wrong.
 				if _, ok := loadWorker(workerID); ok {
-					log.Info("got reboot but worker already exists", "workerID", workerID, "functionID", init.FunctionID)
+					log.Info("init for a worker that's already running", "workerID", workerID, "functionID", init.FunctionID)
 					continue
 				}
 				log.Info("worker init", "workerID", msg.Source, "functionID", init.FunctionID)
