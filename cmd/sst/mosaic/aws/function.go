@@ -455,7 +455,8 @@ func function(ctx context.Context, input input) {
 	// When each worker that isn't running stopped: it exited, wasn't started
 	// again after a rebuild, or failed to start. Its environment is forgotten
 	// forgetAfter later, unless it started again, and expired tells the loop
-	// when.
+	// when. Like workerEnv, it's only used by the loop, so it isn't under
+	// stateMu.
 	stoppedAt := map[string]time.Time{}
 	expired := make(chan string, 100)
 	forgetLater := func(workerID string) {

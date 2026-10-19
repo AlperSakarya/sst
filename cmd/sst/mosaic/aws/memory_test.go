@@ -110,6 +110,53 @@ func TestEnvironmentOfARunningWorkerIsKept(t *testing.T) {
 	}
 }
 
+// An invocation that arrives as its environment is forgotten is answered. The
+// loop is held in a build while the environments' time is up and they're
+// invoked, so it can forget an environment after an invocation was queued for
+// it, and before it sees that invocation.
+func TestInvocationAsItsEnvironmentIsForgotten(t *testing.T) {
+	forgetSoon(t, 300*time.Millisecond)
+	release := make(chan struct{})
+	h := newHarness(t, &fakeRuntime{
+		handle: echo,
+		idle:   20 * time.Millisecond,
+		builds: map[string]chan struct{}{"Slow": release},
+		held:   make(chan string, 1),
+	})
+	h.addFunction("Fn")
+	h.addFunction("Slow")
+	bridges := make([]*fakeBridge, 10)
+	for i := range bridges {
+		bridges[i] = h.bridge("Fn")
+		if _, err := bridges[i].invoke("first"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// the workers exit on idle, and then the loop builds Slow until it's
+	// released
+	time.Sleep(200 * time.Millisecond)
+	h.bridge("Slow")
+	<-h.runtime.held
+	time.Sleep(500 * time.Millisecond)
+	errs := make(chan error, len(bridges))
+	for _, b := range bridges {
+		go func() {
+			got, err := b.invoke("second")
+			if err == nil && got != "echo second" {
+				err = fmt.Errorf("got %q, want %q", got, "echo second")
+			}
+			errs <- err
+		}()
+	}
+	time.Sleep(200 * time.Millisecond)
+	close(release)
+	for range bridges {
+		if err := <-errs; err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
 // A worker that isn't started again after a rebuild, as only the one invoked
 // last is, has its environment forgotten as well.
 func TestEnvironmentNotStartedAfterARebuildIsForgotten(t *testing.T) {
