@@ -233,3 +233,56 @@ func TestReloadReplacesBusyWorkersOnlyForWhatIsInvoked(t *testing.T) {
 		t.Fatalf("started %d workers for %d environments invoked after a save, want one each", started, len(bridges))
 	}
 }
+
+// A worker stopped by a rebuild takes a moment to exit, and goes on asking for
+// an invocation meanwhile, beside the worker that replaces it. An invocation
+// isn't handed to it, as it would never answer.
+func TestReloadDoesNotHandAnInvocationToAStoppedWorker(t *testing.T) {
+	h := newHarness(t, &fakeRuntime{rebuild: true, handle: echo, stopDelay: time.Second})
+	h.addFunction("Fn")
+	b := h.bridge("Fn")
+	if _, err := b.invoke("warm"); err != nil {
+		t.Fatal(err)
+	}
+	before := h.runtime.starts.Load()
+	bus.Publish(&watcher.FileChangedEvent{Path: "src/handler.ts"})
+	for deadline := time.Now().Add(5 * time.Second); h.runtime.starts.Load() == before; time.Sleep(10 * time.Millisecond) {
+		if time.Now().After(deadline) {
+			t.Fatal("the worker wasn't started again after the rebuild")
+		}
+	}
+
+	// the stopped worker still asks, and asked first
+	if got, err := b.invoke("next"); err != nil || got != "echo next" {
+		t.Fatalf("got %q, %v, want %q", got, err, "echo next")
+	}
+}
+
+// One whose invocation came without a deadline is replaced after the longest an
+// invocation can run.
+func TestReloadReplacesAWorkerWithoutADeadline(t *testing.T) {
+	old := longestInvocation
+	longestInvocation = time.Second
+	t.Cleanup(func() { longestInvocation = old })
+	running := make(chan struct{}, 1)
+	h := newHarness(t, &fakeRuntime{rebuild: true, handle: func(event string) string {
+		if event == "hang" {
+			running <- struct{}{}
+			<-t.Context().Done()
+		}
+		return "echo " + event
+	}})
+	h.addFunction("Fn")
+	b := h.bridge("Fn")
+	if _, err := b.invoke("warm"); err != nil {
+		t.Fatal(err)
+	}
+	go b.invoke("hang")
+	<-running
+	bus.Publish(&watcher.FileChangedEvent{Path: "src/handler.ts"})
+	time.Sleep(1500 * time.Millisecond)
+
+	if got, err := b.invoke("next"); err != nil || got != "echo next" {
+		t.Fatalf("got %q, %v, want %q", got, err, "echo next")
+	}
+}

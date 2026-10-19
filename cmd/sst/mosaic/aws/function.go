@@ -95,8 +95,14 @@ func function(ctx context.Context, input input) {
 		// Outdated is whether its function was rebuilt while it ran an
 		// invocation. It's replaced once it's done with it, and the new worker
 		// starts then if Eager, as the function's worker invoked last.
-		Outdated bool
-		Eager    bool
+		// replaceAt replaces it at its invocation's deadline, and is only used
+		// by the loop.
+		Outdated  bool
+		Eager     bool
+		replaceAt *time.Timer
+		// Stopped is whether it was stopped. It takes a moment to exit, and
+		// isn't handed an invocation meanwhile.
+		Stopped bool
 	}
 	workerShutdownChan := make(chan *WorkerInfo, 1000)
 	nextChan := map[string]chan io.Reader{}
@@ -291,14 +297,21 @@ func function(ctx context.Context, input input) {
 			log.Info("worker disconnected", "workerID", workerID)
 			return
 		case reader := <-ch:
-			// the worker can go, as when it exits on idle, as the invocation
-			// arrives. Put it back for the next one, or it's lost.
-			if r.Context().Err() != nil {
+			// the worker can go, as when it exits on idle or is stopped by a
+			// rebuild, as the invocation arrives. Put it back for the next one, or
+			// it's lost.
+			stateMu.Lock()
+			stopped := info != nil && info.Stopped
+			stateMu.Unlock()
+			if r.Context().Err() != nil || stopped {
 				log.Info("worker disconnected, putting its invocation back", "workerID", workerID)
 				queueNext(workerID, reader)
 				// the loop can be busy building, and the worker's runtime doesn't
 				// wait for this
 				go requeue(workerID)
+				// one that was stopped is let go without an answer, which it could
+				// take for an invocation
+				<-r.Context().Done()
 				return
 			}
 			log.Info("worker got next request", "workerID", workerID)
@@ -686,8 +699,13 @@ func function(ctx context.Context, input input) {
 		busy := info.Busy
 		if busy {
 			info.Outdated = true
+		} else {
+			info.Stopped = true
 		}
 		deadline := info.Deadline
+		if deadline.IsZero() {
+			deadline = info.LastInvoked.Add(longestInvocation)
+		}
 		stateMu.Unlock()
 		if !busy {
 			log.Info("stopping", "workerID", info.WorkerID, "functionID", info.FunctionID)
@@ -695,8 +713,8 @@ func function(ctx context.Context, input input) {
 			return
 		}
 		log.Info("rebuilt while running an invocation, replacing it once it's done", "workerID", info.WorkerID, "functionID", info.FunctionID)
-		if !deadline.IsZero() {
-			time.AfterFunc(time.Until(deadline), func() { replace(info) })
+		if info.replaceAt == nil {
+			info.replaceAt = time.AfterFunc(time.Until(deadline), func() { replace(info) })
 		}
 	}
 
@@ -852,10 +870,16 @@ func function(ctx context.Context, input input) {
 			stateMu.Lock()
 			current := workers[info.WorkerID] == info
 			eager := info.Eager
+			if current {
+				info.Stopped = true
+			}
 			stateMu.Unlock()
 			// it may have been replaced already, or exited
 			if !current {
 				break
+			}
+			if info.replaceAt != nil {
+				info.replaceAt.Stop()
 			}
 			log.Info("stopping", "workerID", info.WorkerID, "functionID", info.FunctionID)
 			info.Worker.Stop()
@@ -962,6 +986,11 @@ func reusableBuild(build *runtime.BuildOutput, handlerBuilt bool) bool {
 // How long after a file changes the functions that use it are built again. The
 // files that change in that time are taken together.
 const rebuildDelay = 100 * time.Millisecond
+
+// longestInvocation is how long a worker running an invocation through a
+// rebuild is left to finish it, when the invocation came without a deadline.
+// Lambda sends one, and its longest timeout is 15 minutes.
+var longestInvocation = 15 * time.Minute
 
 type functionBuild struct {
 	FunctionID string

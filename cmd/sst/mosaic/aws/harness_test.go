@@ -96,6 +96,9 @@ type fakeRuntime struct {
 	held   chan string
 	// rebuild, when set, rebuilds every function on any file change
 	rebuild bool
+	// stopDelay is how long a worker goes on asking for an invocation after
+	// it's stopped, as a process takes a moment to exit
+	stopDelay time.Duration
 
 	starts atomic.Int32
 	// failRuns makes starting a worker fail, as when its runtime can't run it
@@ -186,6 +189,7 @@ func (w *fakeWorker) run(ctx context.Context, output *io.PipeWriter) {
 		go func() {
 			select {
 			case <-w.stop:
+				time.Sleep(w.runtime.stopDelay)
 				cancel()
 			case <-next.Done():
 			}
