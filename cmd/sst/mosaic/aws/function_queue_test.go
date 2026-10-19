@@ -253,6 +253,35 @@ func TestBuildDoesNotHoldUpOtherFunctions(t *testing.T) {
 	close(slow)
 }
 
+// A worker that exited, as a Node.js worker does after a minute without work, is
+// started again for its environment's next invocation with the environment its
+// bridge sent before. Asking the bridge to send it again took a round trip.
+func TestWorkerThatExitedStartsWithoutAReboot(t *testing.T) {
+	h := newHarness(t, &fakeRuntime{handle: echo, idle: 100 * time.Millisecond})
+	h.addFunction("Fn")
+	b := h.bridge("Fn")
+	if _, err := b.invoke("x"); err != nil {
+		t.Fatal(err)
+	}
+	reboots := b.reboots.Load()
+	// the worker exits without work
+	time.Sleep(500 * time.Millisecond)
+
+	got, err := b.invoke("y")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != "echo y" {
+		t.Fatalf("got %q, want %q", got, "echo y")
+	}
+	if n := b.reboots.Load() - reboots; n > 0 {
+		t.Fatalf("the bridge was asked to say it's there again %d times, when sst dev knew it", n)
+	}
+	if starts := h.runtime.starts.Load(); starts != 2 {
+		t.Fatalf("started %d workers, want 2", starts)
+	}
+}
+
 // A second init for a worker that's running, as a bridge sends when it's asked
 // for its init again after its first invocation was handled before its first
 // init, doesn't start another worker.
