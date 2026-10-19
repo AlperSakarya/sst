@@ -253,6 +253,27 @@ func TestBuildDoesNotHoldUpOtherFunctions(t *testing.T) {
 	close(slow)
 }
 
+// A second init for a worker that's running, as a bridge sends when it's asked
+// for its init again after its first invocation was handled before its first
+// init, doesn't start another worker.
+func TestSecondInitForARunningWorker(t *testing.T) {
+	h := newHarness(t, &fakeRuntime{handle: echo})
+	h.addFunction("Fn")
+	b := h.bridge("Fn")
+	if _, err := b.invoke("x"); err != nil {
+		t.Fatal(err)
+	}
+	b.init()
+	time.Sleep(100 * time.Millisecond)
+	got, err := b.invoke("y")
+	if err != nil || got != "echo y" {
+		t.Fatalf("got %q, %v, want %q", got, err, "echo y")
+	}
+	if starts := h.runtime.starts.Load(); starts != 1 {
+		t.Fatalf("started %d workers, want 1", starts)
+	}
+}
+
 // A function whose worker can't start, as when its build fails, fails its
 // invocation straight away with an init error, not at Lambda's timeout. The
 // next invocation, once the worker can start, runs.
