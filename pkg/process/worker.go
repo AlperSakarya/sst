@@ -113,7 +113,13 @@ func (w *Worker) Logs() io.ReadCloser {
 		case <-read:
 		case <-time.After(workerOutputGrace):
 			// something the worker started holds its output open, and isn't in
-			// its group
+			// its group. Closing the pipes ends the reads, and what they read
+			// last is passed on.
+			closeFiles(w.output)
+			select {
+			case <-read:
+			case <-time.After(workerOutputGrace):
+			}
 		}
 		closeFiles(w.output)
 		writer.Close()

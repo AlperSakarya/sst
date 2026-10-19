@@ -299,11 +299,19 @@ func function(ctx context.Context, input input) {
 		case reader := <-ch:
 			// the worker can go, as when it exits on idle or is stopped by a
 			// rebuild, as the invocation arrives. Put it back for the next one, or
-			// it's lost.
+			// it's lost. It's taken as busy in the same lock, so a rebuild either
+			// stops it before, and it's put back, or leaves it to finish.
+			gone := r.Context().Err() != nil
 			stateMu.Lock()
 			stopped := info != nil && info.Stopped
+			current, recorded := workers[workerID]
+			if !gone && !stopped && recorded {
+				current.Busy = true
+				current.LastInvoked = time.Now()
+				current.Deadline = time.Time{}
+			}
 			stateMu.Unlock()
-			if r.Context().Err() != nil || stopped {
+			if gone || stopped {
 				log.Info("worker disconnected, putting its invocation back", "workerID", workerID)
 				queueNext(workerID, reader)
 				// the loop can be busy building, and the worker's runtime doesn't
@@ -317,16 +325,11 @@ func function(ctx context.Context, input input) {
 			log.Info("worker got next request", "workerID", workerID)
 			resp, _ := http.ReadResponse(bufio.NewReader(reader), r)
 			requestID := resp.Header.Get("lambda-runtime-aws-request-id")
-			stateMu.Lock()
-			if info, ok := workers[workerID]; ok {
-				info.Busy = true
-				info.LastInvoked = time.Now()
-				info.Deadline = time.Time{}
-				if ms, err := strconv.ParseInt(resp.Header.Get("lambda-runtime-deadline-ms"), 10, 64); err == nil {
-					info.Deadline = time.UnixMilli(ms)
-				}
+			if ms, err := strconv.ParseInt(resp.Header.Get("lambda-runtime-deadline-ms"), 10, 64); err == nil && recorded {
+				stateMu.Lock()
+				current.Deadline = time.UnixMilli(ms)
+				stateMu.Unlock()
 			}
-			stateMu.Unlock()
 			for key, values := range resp.Header {
 				for _, value := range values {
 					w.Header().Add(key, value)
