@@ -252,8 +252,9 @@ func TestBuildDoesNotHoldUpOtherFunctions(t *testing.T) {
 	close(slow)
 }
 
-// A bridge asked for its init again, as when its first invocation was handled
-// before its init, sends it while its worker runs. It doesn't start another.
+// A second init for a worker that's running, as a bridge sends when it's asked
+// for its init again after its first invocation was handled before its first
+// init, doesn't start another worker.
 func TestSecondInitForARunningWorker(t *testing.T) {
 	h := newHarness(t, &fakeRuntime{handle: echo})
 	h.addFunction("Fn")
