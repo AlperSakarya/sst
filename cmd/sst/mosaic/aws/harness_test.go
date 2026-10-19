@@ -45,6 +45,8 @@ type fakeAppSync struct {
 	// pingDelay is how long publishing a ping takes, as a publish to AppSync
 	// takes a round trip
 	pingDelay atomic.Int64
+	// what was published over the socket, by message type
+	overSocket map[bridge.MessageType]int
 }
 
 func (f *fakeAppSync) Publish(ctx context.Context, channel string, event interface{}) error {
@@ -62,6 +64,20 @@ func (f *fakeAppSync) Publish(ctx context.Context, channel string, event interfa
 		sub <- string(data)
 	}
 	return nil
+}
+
+// PublishOverSocket publishes as Publish does, and counts what went this way,
+// by message type.
+func (f *fakeAppSync) PublishOverSocket(ctx context.Context, channel string, event interface{}) error {
+	if p, ok := event.(bridge.Packet); ok {
+		f.mu.Lock()
+		if f.overSocket == nil {
+			f.overSocket = map[bridge.MessageType]int{}
+		}
+		f.overSocket[p.Type]++
+		f.mu.Unlock()
+	}
+	return f.Publish(ctx, channel, event)
 }
 
 func (f *fakeAppSync) Subscribe(ctx context.Context, channel string) (chan string, error) {

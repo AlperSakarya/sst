@@ -174,6 +174,14 @@ func function(ctx context.Context, input input) {
 		writer.SetLogsFollow(cloudLogs != nil && message != bridge.MessageLogs)
 		return writer
 	}
+	// firstReply makes the writer for the first copy of a reply, which goes
+	// over the AppSync connection's WebSocket where it can, as the bridge is
+	// waiting on it. Its resends, and every other message, go over HTTPS.
+	firstReply := func(message bridge.MessageType, workerID, messageID string) *bridge.Writer {
+		writer := newReply(message, workerID, messageID)
+		writer.SetOverSocket(!flag.SST_DEV_HTTP_PUBLISH)
+		return writer
+	}
 	resendReply := func(message bridge.MessageType, workerID, messageID string, body []byte) {
 		resendCtx, cancel := context.WithCancel(ctx)
 		r := &resending{cancel}
@@ -307,7 +315,7 @@ func function(ctx context.Context, input input) {
 		// an init error has no request ID, so its copies share one made here, and
 		// the bridge passes on only one of them
 		messageID := id.Ascending()
-		writer := newReply(bridge.MessageInitError, workerID, messageID)
+		writer := firstReply(bridge.MessageInitError, workerID, messageID)
 		var buf bytes.Buffer
 		if _, err := buf.ReadFrom(r.Body); err != nil {
 			log.Error("failed to read init error", "workerID", workerID, "err", err)
@@ -335,7 +343,7 @@ func function(ctx context.Context, input input) {
 		workerID := r.PathValue("workerID")
 		requestID := r.PathValue("requestID")
 		log.Info("got response", "workerID", workerID, "requestID", r.PathValue("requestID"))
-		writer := newReply(bridge.MessageResponse, workerID, requestID)
+		writer := firstReply(bridge.MessageResponse, workerID, requestID)
 		defer sendLogs(workerID, requestID)
 		info, ok := loadWorker(workerID)
 		if ok && info.Streaming {
@@ -375,7 +383,7 @@ func function(ctx context.Context, input input) {
 		workerID := r.PathValue("workerID")
 		requestID := r.PathValue("requestID")
 		log.Info("got error", "workerID", workerID, "requestID", r.PathValue("requestID"))
-		writer := newReply(bridge.MessageError, workerID, requestID)
+		writer := firstReply(bridge.MessageError, workerID, requestID)
 		var buf bytes.Buffer
 		if _, err := buf.ReadFrom(r.Body); err != nil {
 			log.Error("failed to read error", "workerID", workerID, "requestID", requestID, "err", err)

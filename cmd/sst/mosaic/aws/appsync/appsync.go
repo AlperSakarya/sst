@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"crypto/tls"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
@@ -24,6 +25,10 @@ import (
 )
 
 var log = slog.Default().With("service", "appsync.connection")
+
+// dialTLS is the TLS config of the WebSocket's dialer: the default, unless a
+// test points it at its own server
+var dialTLS *tls.Config
 
 var ErrSubscriptionFailed = fmt.Errorf("appsync subscription failed")
 var ErrConnectionFailed = fmt.Errorf("appsync connection failed")
@@ -97,6 +102,13 @@ type Connection struct {
 
 	// made once, so publishes through a proxy reuse their connections
 	httpClient *http.Client
+
+	// the WebSocket's publishing side, replaced with the connection; writeLock
+	// is held for every write to a WebSocket, which takes one writer at a time
+	socket       *socket
+	socketLock   sync.Mutex
+	writeLock    sync.Mutex
+	socketBudget socketBudget
 }
 
 type SubscriptionInfo struct {
@@ -159,7 +171,8 @@ func (c *Connection) connect(ctx context.Context) error {
 
 	// Configure WebSocket dialer with proxy support
 	dialer := websocket.Dialer{
-		Subprotocols: []string{"aws-appsync-event-ws", "header-" + auth64},
+		Subprotocols:    []string{"aws-appsync-event-ws", "header-" + auth64},
+		TLSClientConfig: dialTLS,
 	}
 
 	// Add proxy support to WebSocket dialer
@@ -191,6 +204,10 @@ func (c *Connection) connect(ctx context.Context) error {
 		return ErrConnectionFailed
 	}
 	duration := time.Millisecond * time.Duration(msg["connectionTimeoutMs"].(float64))
+	published := newSocket(conn, &c.writeLock)
+	c.socketLock.Lock()
+	c.socket = published
+	c.socketLock.Unlock()
 
 	timer := time.NewTimer(duration)
 	go func() {
@@ -209,10 +226,14 @@ func (c *Connection) connect(ctx context.Context) error {
 			err := conn.ReadJSON(&msg)
 			if err != nil {
 				log.Info("connection closed")
+				published.failAll(errSocketClosed, true)
 				timer.Reset(1 * time.Millisecond)
 				return
 			}
 			log.Info("msg", "type", msg["type"], "id", msg["id"])
+			if published.handle(msg) {
+				continue
+			}
 
 			if msg["type"] == "connection_ack" {
 				duration = time.Millisecond * time.Duration(msg["connectionTimeoutMs"].(float64))
@@ -351,12 +372,14 @@ func (c *Connection) subscribe(ctx context.Context, channel string, subscription
 		Channel: channel,
 		Out:     tmp,
 	})
+	c.writeLock.Lock()
 	c.conn.WriteJSON(map[string]interface{}{
 		"type":          "subscribe",
 		"id":            subscriptionID,
 		"channel":       channel,
 		"authorization": auth,
 	})
+	c.writeLock.Unlock()
 	select {
 	case <-tmp:
 		log.Info("subscribed", "channel", channel, "id", subscriptionID)
