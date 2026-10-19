@@ -689,8 +689,10 @@ func function(ctx context.Context, input input) {
 				workerID := msg.Source
 				// A bridge sends its init, then its first invocation. When the
 				// invocation is handled first, the worker isn't there yet, so the
-				// bridge is asked for its init again, and that one finds the worker
-				// the first started. Nothing is wrong.
+				// bridge is asked for its init again. It answers whenever the ask
+				// arrives, while it waits for a reply or for what the function
+				// printed, so this init finds the worker the first init started.
+				// Nothing is wrong.
 				if _, ok := loadWorker(workerID); ok {
 					log.Info("got reboot but worker already exists", "workerID", workerID, "functionID", init.FunctionID)
 					continue
