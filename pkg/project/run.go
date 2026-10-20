@@ -400,7 +400,10 @@ func (p *Project) Run(ctx context.Context, input *StackInput) error {
 	// A deploy with a policy pack runs Pulumi's preview before the update. The
 	// preview's events aren't passed on, as they'd show each resource as
 	// changed before anything is. Pulumi starts the event log again for the
-	// update, and can do so before the preview's last events are read.
+	// update, and can do so before the preview's last events are read. It
+	// opens the same file again with O_TRUNC (startEventLogger in its
+	// backend/display), which this relies on: check a deploy with --policy
+	// when Pulumi is updated.
 	previewing := input.Command == "deploy" && input.PolicyPath != ""
 	// the preview's log up to its first planned step, which the update's
 	// log doesn't have
@@ -586,7 +589,7 @@ loop:
 		}
 
 		if event.DiagnosticEvent != nil && event.DiagnosticEvent.Severity == "error" {
-			if strings.HasPrefix(event.DiagnosticEvent.Message, "update failed") || strings.TrimSpace(event.DiagnosticEvent.Message) == "preview failed" || strings.TrimSpace(event.DiagnosticEvent.Message) == "preview canceled" || strings.HasPrefix(event.DiagnosticEvent.Message, "update cancelled") || strings.Contains(event.DiagnosticEvent.Message, "failed to register new resource") {
+			if strings.HasPrefix(event.DiagnosticEvent.Message, "update failed") || (input.Command == "deploy" && (strings.TrimSpace(event.DiagnosticEvent.Message) == "preview failed" || strings.TrimSpace(event.DiagnosticEvent.Message) == "preview canceled")) || strings.HasPrefix(event.DiagnosticEvent.Message, "update cancelled") || strings.Contains(event.DiagnosticEvent.Message, "failed to register new resource") {
 				continue
 			}
 
@@ -795,6 +798,9 @@ func eventLogRestarted(file *os.File, read int64, previewStart []byte) bool {
 		return true
 	}
 	start := make([]byte, len(previewStart))
-	n, _ := file.ReadAt(start, 0)
-	return !bytes.Equal(start[:n], previewStart)
+	// it's at least as long as what was read, so a failed read isn't one
+	if _, err := file.ReadAt(start, 0); err != nil {
+		return false
+	}
+	return !bytes.Equal(start, previewStart)
 }
