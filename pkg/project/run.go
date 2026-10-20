@@ -2,6 +2,7 @@ package project
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -333,7 +334,13 @@ func (p *Project) Run(ctx context.Context, input *StackInput) error {
 	case "refresh":
 		args = append([]string{"refresh", "--yes", "--run-program"}, args...)
 	case "deploy":
-		args = append([]string{"up", "--yes", "-f"}, args...)
+		if input.PolicyPath != "" {
+			// Preview first, so a mandatory policy stops the deploy before
+			// anything is changed
+			args = append([]string{"up", "--yes"}, args...)
+		} else {
+			args = append([]string{"up", "--yes", "-f"}, args...)
+		}
 	case "remove":
 		args = append([]string{"destroy", "--yes", "-f"}, args...)
 	}
@@ -390,6 +397,15 @@ func (p *Project) Run(ctx context.Context, input *StackInput) error {
 	hasPolicyFlag := input.PolicyPath != ""
 	hasPolicyEvents := false
 	hasPolicyViolations := false
+	// A deploy with a policy pack runs Pulumi's preview before the update. The
+	// preview's events aren't passed on, as they'd show each resource as
+	// changed before anything is. Pulumi starts the event log again for the
+	// update, and can do so before the preview's last events are read.
+	previewing := input.Command == "deploy" && input.PolicyPath != ""
+	var previewFirst []byte
+	var read int64
+	// The preview and the update each report an advisory policy
+	advisories := map[string]bool{}
 
 	partial := make(chan int, 1000)
 	partialContext, partialCancel := context.WithCancel(ctx)
@@ -463,8 +479,22 @@ func (p *Project) Run(ctx context.Context, input *StackInput) error {
 loop:
 	for {
 		bytes, err := reader.ReadBytes('\n')
+		read += int64(len(bytes))
+		if previewing && previewFirst == nil && err == nil {
+			previewFirst = bytes
+		}
 		if err != nil {
 			if err == io.EOF {
+				if previewing && previewFirst != nil && eventLogRestarted(eventlog, read, previewFirst) {
+					log.Info("reading the update's event log")
+					if _, err := eventlog.Seek(0, io.SeekStart); err != nil {
+						return err
+					}
+					reader.Reset(eventlog)
+					read = 0
+					previewing = false
+					continue
+				}
 				select {
 				case <-exited:
 					log.Info("eof and exited", "eofs", eofs)
@@ -509,16 +539,20 @@ loop:
 					"policy", event.PolicyEvent.PolicyName,
 					"urn", event.PolicyEvent.ResourceURN)
 
-				bus.Publish(&PolicyAdvisoryEvent{
-					Policy:  event.PolicyEvent.PolicyName,
-					Message: strings.TrimSpace(event.PolicyEvent.Message),
-					URN:     event.PolicyEvent.ResourceURN,
-				})
+				key := event.PolicyEvent.PolicyName + "\x00" + event.PolicyEvent.ResourceURN + "\x00" + event.PolicyEvent.Message
+				if !advisories[key] {
+					advisories[key] = true
+					bus.Publish(&PolicyAdvisoryEvent{
+						Policy:  event.PolicyEvent.PolicyName,
+						Message: strings.TrimSpace(event.PolicyEvent.Message),
+						URN:     event.PolicyEvent.ResourceURN,
+					})
+				}
 			}
 		}
 
 		if event.DiagnosticEvent != nil && event.DiagnosticEvent.Severity == "error" {
-			if strings.HasPrefix(event.DiagnosticEvent.Message, "update failed") || strings.HasPrefix(event.DiagnosticEvent.Message, "update cancelled") || strings.Contains(event.DiagnosticEvent.Message, "failed to register new resource") {
+			if strings.HasPrefix(event.DiagnosticEvent.Message, "update failed") || strings.HasPrefix(event.DiagnosticEvent.Message, "preview failed") || strings.HasPrefix(event.DiagnosticEvent.Message, "update cancelled") || strings.Contains(event.DiagnosticEvent.Message, "failed to register new resource") {
 				continue
 			}
 
@@ -566,6 +600,11 @@ loop:
 					})
 				}
 			}
+		}
+
+		// The preview's errors still show, as the update doesn't run after one
+		if previewing && (event.DiagnosticEvent == nil || event.DiagnosticEvent.Severity != "error") {
+			continue
 		}
 
 		if input.Command != "diff" && (event.ResOutputsEvent != nil || event.CancelEvent != nil || event.SummaryEvent != nil) {
@@ -695,4 +734,20 @@ loop:
 		return ErrStackRunFailed
 	}
 	return nil
+}
+
+// Whether Pulumi has started the event log again, as it does for the update
+// after a preview: it's shorter than what was read of it, or it starts with
+// another line.
+func eventLogRestarted(file *os.File, read int64, first []byte) bool {
+	info, err := file.Stat()
+	if err != nil {
+		return false
+	}
+	if info.Size() < read {
+		return true
+	}
+	start := make([]byte, len(first))
+	n, _ := file.ReadAt(start, 0)
+	return !bytes.Equal(start[:n], first)
 }
