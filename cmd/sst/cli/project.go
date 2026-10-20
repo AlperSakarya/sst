@@ -118,6 +118,8 @@ func (c *Cli) InitProject() (*project.Project, error) {
 			if err != nil {
 				slog.Error("failed to remove temp log file", "err", err)
 			}
+			// were it ever past the cap before sst.log
+			os.Remove(tmpLog + ".1")
 		}()
 		logFile = nextLogFile
 		logMu.Unlock()
