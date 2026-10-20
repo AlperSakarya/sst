@@ -480,6 +480,22 @@ func (p *Project) Run(ctx context.Context, input *StackInput) error {
 	}()
 
 	reader := bufio.NewReader(eventlog)
+	// Reads the update's event log from its start. What was taken from it as
+	// the preview's is dropped: a preview that passed leaves no errors.
+	readUpdate := func() error {
+		log.Info("reading the update's event log")
+		if _, err := eventlog.Seek(0, io.SeekStart); err != nil {
+			return err
+		}
+		reader.Reset(eventlog)
+		read = 0
+		previewing = false
+		previewDiagnostics = nil
+		errors = []Error{}
+		importDiffs = map[string][]ImportDiff{}
+		hasPolicyViolations = false
+		return nil
+	}
 
 	eofs := 0
 loop:
@@ -488,19 +504,13 @@ loop:
 		read += int64(len(bytes))
 		if previewing && !planned && err == nil {
 			previewStart = append(previewStart, bytes...)
-			planned = strings.Contains(string(bytes), `"planning":true`)
 		}
 		if err != nil {
 			if err == io.EOF {
 				if previewing && len(previewStart) > 0 && eventLogRestarted(eventlog, read, previewStart) {
-					log.Info("reading the update's event log")
-					if _, err := eventlog.Seek(0, io.SeekStart); err != nil {
+					if err := readUpdate(); err != nil {
 						return err
 					}
-					reader.Reset(eventlog)
-					read = 0
-					previewing = false
-					previewDiagnostics = nil
 					continue
 				}
 				select {
@@ -524,6 +534,21 @@ loop:
 		if err != nil {
 			log.Error("failed to unmarshal event", "err", err)
 			continue
+		}
+
+		if previewing {
+			pre, outputs := event.ResourcePreEvent, event.ResOutputsEvent
+			// A step the update took, read from where the preview's log
+			// ended, before the log was seen to start again
+			if (pre != nil && !pre.Planning) || (outputs != nil && !outputs.Planning) {
+				if err := readUpdate(); err != nil {
+					return err
+				}
+				continue
+			}
+			if pre != nil && pre.Planning {
+				planned = true
+			}
 		}
 
 		if event.PolicyEvent != nil {
