@@ -572,12 +572,13 @@ loop:
 					"policy", event.PolicyEvent.PolicyName,
 					"urn", event.PolicyEvent.ResourceURN)
 
-				key := event.PolicyEvent.PolicyName + "\x00" + event.PolicyEvent.ResourceURN + "\x00" + event.PolicyEvent.Message
+				message := strings.TrimSpace(event.PolicyEvent.Message)
+				key := event.PolicyEvent.PolicyName + "\x00" + event.PolicyEvent.ResourceURN + "\x00" + message
 				if !advisories[key] {
 					advisories[key] = true
 					bus.Publish(&PolicyAdvisoryEvent{
 						Policy:  event.PolicyEvent.PolicyName,
-						Message: strings.TrimSpace(event.PolicyEvent.Message),
+						Message: message,
 						URN:     event.PolicyEvent.ResourceURN,
 					})
 				}
