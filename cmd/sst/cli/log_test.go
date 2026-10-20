@@ -91,3 +91,43 @@ func TestCappedLogThatCantBeMoved(t *testing.T) {
 		t.Errorf("sst.log has %q, want only the third line", current)
 	}
 }
+
+// One write past the limit goes to the log as it is, and the next starts it
+// again: the cap is checked before a write, not within one.
+func TestCappedLogWriteOverTheLimit(t *testing.T) {
+	path := capLogAt(t, 100)
+	big := strings.Repeat("a", 149) + "\n"
+	line := "after\n"
+	for _, p := range []string{big, line} {
+		if _, err := (cappedLog{}).Write([]byte(p)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	moved, err := os.ReadFile(path + ".1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	current, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(moved) != big || string(current) != line {
+		t.Errorf("sst.log.1 has %d bytes and sst.log %q, want the 150 and the line after", len(moved), current)
+	}
+}
+
+// What's logged reaches each writer, though one before it fails.
+func TestLogWritersPastAFailure(t *testing.T) {
+	closed, err := os.Create(filepath.Join(t.TempDir(), "closed.log"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	closed.Close()
+	var got strings.Builder
+	if _, err := (logWriters{closed, &got}).Write([]byte("line\n")); err == nil {
+		t.Error("no error from the closed file")
+	}
+	if got.String() != "line\n" {
+		t.Errorf("the writer after the closed file got %q", got.String())
+	}
+}

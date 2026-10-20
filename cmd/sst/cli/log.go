@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"io"
 	"os"
 	"runtime/debug"
 	"sync"
@@ -43,6 +44,20 @@ func (cappedLog) Write(p []byte) (int, error) {
 	n, err := logFile.Write(p)
 	logSize += int64(n)
 	return n, err
+}
+
+// logWriters writes to each of its writers, though one of them fails, where
+// io.MultiWriter stops at the first that does
+type logWriters []io.Writer
+
+func (w logWriters) Write(p []byte) (int, error) {
+	var failed error
+	for _, writer := range w {
+		if _, err := writer.Write(p); err != nil && failed == nil {
+			failed = err
+		}
+	}
+	return len(p), failed
 }
 
 // The file is closed before it's moved, as Windows can't move an open file.

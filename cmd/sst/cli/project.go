@@ -101,8 +101,10 @@ func (c *Cli) InitProject() (*project.Project, error) {
 			return nil, util.NewReadableError(err, "Could not copy log file")
 		}
 		logFile.Close()
+		// its name is taken now, as logFile can change once it's unlocked
+		tmpLog := logFile.Name()
 		defer func() {
-			err = os.RemoveAll(filepath.Join(os.TempDir(), logFile.Name()))
+			err = os.Remove(tmpLog)
 			if err != nil {
 				slog.Error("failed to remove temp log file", "err", err)
 			}
@@ -145,13 +147,10 @@ func (c *Cli) InitProject() (*project.Project, error) {
 }
 
 func (c *Cli) configureLog() {
-	// stderr first, as a writer that fails stops the ones after it
-	writers := []io.Writer{}
+	writer := logWriters{cappedLog{}}
 	if c.Bool("print-logs") || flag.SST_PRINT_LOGS {
-		writers = append(writers, os.Stderr)
+		writer = append(writer, os.Stderr)
 	}
-	writers = append(writers, cappedLog{})
-	writer := io.MultiWriter(writers...)
 	slog.SetDefault(
 		slog.New(slog.NewTextHandler(writer, &slog.HandlerOptions{
 			Level: slog.LevelInfo,
