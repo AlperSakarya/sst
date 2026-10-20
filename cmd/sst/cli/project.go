@@ -87,8 +87,6 @@ func (c *Cli) InitProject() (*project.Project, error) {
 		if err != nil {
 			return nil, util.NewReadableError(err, "Could not create log file")
 		}
-		// what an earlier run's log moved there past its cap
-		os.Remove(sstLog + ".1")
 		_, err = io.Copy(nextLogFile, logFile)
 		if err != nil {
 			return nil, util.NewReadableError(err, "Could not copy log file")
@@ -100,9 +98,7 @@ func (c *Cli) InitProject() (*project.Project, error) {
 				slog.Error("failed to remove temp log file", "err", err)
 			}
 		}()
-		logMu.Lock()
 		logFile = nextLogFile
-		logMu.Unlock()
 	}
 	c.configureLog()
 
@@ -139,7 +135,7 @@ func (c *Cli) InitProject() (*project.Project, error) {
 }
 
 func (c *Cli) configureLog() {
-	writers := []io.Writer{cappedLog{}}
+	writers := []io.Writer{logFile}
 	if c.Bool("print-logs") || flag.SST_PRINT_LOGS {
 		writers = append(writers, os.Stderr)
 	}
@@ -149,7 +145,5 @@ func (c *Cli) configureLog() {
 			Level: slog.LevelInfo,
 		})),
 	)
-	logMu.Lock()
 	debug.SetCrashOutput(logFile, debug.CrashOptions{})
-	logMu.Unlock()
 }

@@ -50,8 +50,8 @@ type UI struct {
 	parents    map[string]string
 	workerTime map[string]time.Time
 	colors     map[string]lipgloss.Style
-	// how many colors workerColor has handed out
-	colorsUsed int
+	// the palette index workerColor looks from next
+	colorIndex int
 	complete   *project.CompleteEvent
 	footer     *footer
 	buffer     []interface{}
@@ -619,17 +619,29 @@ func GetColor(input string) lipgloss.Style {
 	return Colors[hash%len(Colors)]
 }
 
-// workerColor hands out palette colors in first-seen order, so workers that
-// start together (concurrent cold starts) never share a color until more than
-// len(Colors) are active. GetColor's hash can collide with just two.
+// workerColor hands out the next palette color in turn that no worker it
+// keeps has, so workers seen together (concurrent cold starts) don't share a
+// color while it keeps fewer than len(Colors). Past that, it takes the next in
+// turn. GetColor's hash can collide with just two.
 func (u *UI) workerColor(workerID string) lipgloss.Style {
-	style, ok := u.colors[workerID]
-	if !ok {
-		style = Colors[u.colorsUsed%len(Colors)]
-		u.colorsUsed++
-		u.colors[workerID] = style
+	if style, ok := u.colors[workerID]; ok {
+		return style
 	}
-	return style
+	taken := map[lipgloss.TerminalColor]bool{}
+	for _, style := range u.colors {
+		taken[style.GetForeground()] = true
+	}
+	next := u.colorIndex % len(Colors)
+	for i := range len(Colors) {
+		candidate := (u.colorIndex + i) % len(Colors)
+		if !taken[Colors[candidate].GetForeground()] {
+			next = candidate
+			break
+		}
+	}
+	u.colorIndex = next + 1
+	u.colors[workerID] = Colors[next]
+	return Colors[next]
 }
 
 // forgetWorker drops what's kept for a worker that won't print again

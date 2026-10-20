@@ -2,6 +2,7 @@ package ui
 
 import (
 	"context"
+	"fmt"
 	"testing"
 
 	"github.com/sst/sst/v3/cmd/sst/mosaic/aws"
@@ -28,6 +29,21 @@ func TestForgottenWorker(t *testing.T) {
 	u.Event(&aws.FunctionInvokedEvent{FunctionID: "Fn", WorkerID: "c"})
 	if u.colors["c"].GetForeground() == u.colors["b"].GetForeground() {
 		t.Error("c has b's color, and both are running")
+	}
+}
+
+// A long-lived worker keeps a color of its own while others come and go.
+func TestLongLivedWorkerColor(t *testing.T) {
+	u := New(context.Background(), WithSilent)
+	u.Event(&aws.FunctionInvokedEvent{FunctionID: "Fn", WorkerID: "long"})
+	long := u.colors["long"].GetForeground()
+	for i := range 3 * len(Colors) {
+		id := fmt.Sprintf("short-%d", i)
+		u.Event(&aws.FunctionInvokedEvent{FunctionID: "Fn", WorkerID: id})
+		if u.colors[id].GetForeground() == long {
+			t.Fatalf("%s has the long-lived worker's color", id)
+		}
+		u.Event(&aws.FunctionWorkerForgottenEvent{FunctionID: "Fn", WorkerID: id})
 	}
 }
 
