@@ -17,10 +17,14 @@ import (
 	"github.com/sst/sst/v3/pkg/project"
 )
 
+// the temp log what's logged goes to until InitProject makes sst.log
+var tempLogPath string
+
 var logFile = (func() *os.File {
 	tmpPath := flag.SST_LOG
 	if tmpPath == "" {
 		tmpPath = filepath.Join(os.TempDir(), fmt.Sprintf("sst-%s.log", time.Now().Format("2006-01-02-15-04-05")))
+		tempLogPath = tmpPath
 	}
 	logFile, err := os.Create(tmpPath)
 	if err != nil {
@@ -104,6 +108,10 @@ func (c *Cli) InitProject() (*project.Project, error) {
 		// its name is taken now, as logFile can change once it's unlocked
 		tmpLog := logFile.Name()
 		defer func() {
+			// only the temp log, not an sst.log a second call would have here
+			if tmpLog != tempLogPath {
+				return
+			}
 			err = os.Remove(tmpLog)
 			if err != nil {
 				slog.Error("failed to remove temp log file", "err", err)

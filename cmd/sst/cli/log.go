@@ -64,6 +64,8 @@ func (w logWriters) Write(p []byte) (int, error) {
 // If no new file can be made, it's opened again to add to.
 func startLogAgain(file *os.File) (*os.File, error) {
 	path := file.Name()
+	// the crash output keeps a handle on it too
+	debug.SetCrashOutput(nil, debug.CrashOptions{})
 	file.Close()
 	os.Rename(path, path+".1")
 	if next, err := os.Create(path); err == nil {
