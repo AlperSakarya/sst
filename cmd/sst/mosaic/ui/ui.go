@@ -193,13 +193,14 @@ func (u *UI) Event(unknown interface{}) {
 		u.printWorkerEvent(evt.WorkerID, evt.TaskID, formattedDuration, evt.Line)
 
 	case *aws.TaskCompleteEvent:
+		// nothing more prints for its worker, though the filter hides it
+		defer u.forgetWorker(evt.WorkerID)
 		if !u.matchFilter(evt.TaskID) {
 			return
 		}
 		duration := time.Since(u.workerTime[evt.WorkerID]).Round(time.Millisecond)
 		formattedDuration := fmt.Sprintf("took %.9s", fmt.Sprintf("+%v", duration))
 		u.printWorkerEvent(evt.WorkerID, evt.TaskID, "Done", formattedDuration)
-		u.forgetWorker(evt.WorkerID)
 
 	case *aws.TaskMissingCommandEvent:
 		if !u.matchFilter(evt.Name) {

@@ -19,7 +19,8 @@ var (
 )
 
 // cappedLog writes to logFile. Once that's past logLimit, it moves what's
-// there to <name>.1, replacing an older one, and starts the file again.
+// there to <name>.1, replacing an older one, and starts the file again. If it
+// can't be moved, it's emptied, so the cap holds.
 type cappedLog struct{}
 
 func (cappedLog) Write(p []byte) (int, error) {
@@ -46,8 +47,6 @@ func (cappedLog) Write(p []byte) (int, error) {
 func startLogAgain(file *os.File) (*os.File, error) {
 	path := file.Name()
 	file.Close()
-	if err := os.Rename(path, path+".1"); err != nil {
-		return os.OpenFile(path, os.O_WRONLY|os.O_APPEND|os.O_CREATE, 0644)
-	}
+	os.Rename(path, path+".1")
 	return os.Create(path)
 }

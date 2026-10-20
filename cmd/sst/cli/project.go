@@ -87,6 +87,8 @@ func (c *Cli) InitProject() (*project.Project, error) {
 		if err != nil {
 			return nil, util.NewReadableError(err, "Could not create log file")
 		}
+		// what an earlier run's log moved there past its cap
+		os.Remove(sstLog + ".1")
 		_, err = io.Copy(nextLogFile, logFile)
 		if err != nil {
 			return nil, util.NewReadableError(err, "Could not copy log file")

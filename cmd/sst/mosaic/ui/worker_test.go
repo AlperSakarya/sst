@@ -31,11 +31,15 @@ func TestForgottenWorker(t *testing.T) {
 	}
 }
 
-// A task's worker isn't kept once the task is done.
+// A task's worker isn't kept once the task is done, though the pane's filter
+// came to hide the task while it ran.
 func TestDoneTaskWorker(t *testing.T) {
 	u := New(context.Background(), WithSilent)
 	u.Event(&aws.TaskStartEvent{TaskID: "Task", WorkerID: "a"})
 	u.Event(&aws.TaskCompleteEvent{TaskID: "Task", WorkerID: "a"})
+	u.Event(&aws.TaskStartEvent{TaskID: "Task", WorkerID: "b"})
+	u.SetFilter("Other", "task")
+	u.Event(&aws.TaskCompleteEvent{TaskID: "Task", WorkerID: "b"})
 	if len(u.workerTime) != 0 || len(u.colors) != 0 {
 		t.Fatalf("kept %d times and %d colors, want none", len(u.workerTime), len(u.colors))
 	}
