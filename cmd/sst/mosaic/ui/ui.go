@@ -50,6 +50,8 @@ type UI struct {
 	parents    map[string]string
 	workerTime map[string]time.Time
 	colors     map[string]lipgloss.Style
+	// how many colors workerColor has handed out
+	colorsUsed int
 	complete   *project.CompleteEvent
 	footer     *footer
 	buffer     []interface{}
@@ -197,12 +199,16 @@ func (u *UI) Event(unknown interface{}) {
 		duration := time.Since(u.workerTime[evt.WorkerID]).Round(time.Millisecond)
 		formattedDuration := fmt.Sprintf("took %.9s", fmt.Sprintf("+%v", duration))
 		u.printWorkerEvent(evt.WorkerID, evt.TaskID, "Done", formattedDuration)
+		u.forgetWorker(evt.WorkerID)
 
 	case *aws.TaskMissingCommandEvent:
 		if !u.matchFilter(evt.Name) {
 			return
 		}
 		u.printEvent(TEXT_DANGER, fmt.Sprintf("%-11s", "Missing"), fmt.Sprintf("Dev command not configured for the \"%s\" task. Set `dev.command` to configure how the task works in `sst dev`.", evt.Name))
+
+	case *aws.FunctionWorkerForgottenEvent:
+		u.forgetWorker(evt.WorkerID)
 
 	case *aws.FunctionInvokedEvent:
 		if !u.matchFilter(evt.FunctionID) {
@@ -618,10 +624,17 @@ func GetColor(input string) lipgloss.Style {
 func (u *UI) workerColor(workerID string) lipgloss.Style {
 	style, ok := u.colors[workerID]
 	if !ok {
-		style = Colors[len(u.colors)%len(Colors)]
+		style = Colors[u.colorsUsed%len(Colors)]
+		u.colorsUsed++
 		u.colors[workerID] = style
 	}
 	return style
+}
+
+// forgetWorker drops what's kept for a worker that won't print again
+func (u *UI) forgetWorker(workerID string) {
+	delete(u.workerTime, workerID)
+	delete(u.colors, workerID)
 }
 
 func (u *UI) functionName(functionID string) string {

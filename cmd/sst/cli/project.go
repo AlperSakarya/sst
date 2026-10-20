@@ -98,7 +98,9 @@ func (c *Cli) InitProject() (*project.Project, error) {
 				slog.Error("failed to remove temp log file", "err", err)
 			}
 		}()
+		logMu.Lock()
 		logFile = nextLogFile
+		logMu.Unlock()
 	}
 	c.configureLog()
 
@@ -135,7 +137,7 @@ func (c *Cli) InitProject() (*project.Project, error) {
 }
 
 func (c *Cli) configureLog() {
-	writers := []io.Writer{logFile}
+	writers := []io.Writer{cappedLog{}}
 	if c.Bool("print-logs") || flag.SST_PRINT_LOGS {
 		writers = append(writers, os.Stderr)
 	}
@@ -145,5 +147,7 @@ func (c *Cli) configureLog() {
 			Level: slog.LevelInfo,
 		})),
 	)
+	logMu.Lock()
 	debug.SetCrashOutput(logFile, debug.CrashOptions{})
+	logMu.Unlock()
 }
