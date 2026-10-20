@@ -586,7 +586,7 @@ loop:
 		}
 
 		if event.DiagnosticEvent != nil && event.DiagnosticEvent.Severity == "error" {
-			if strings.HasPrefix(event.DiagnosticEvent.Message, "update failed") || strings.TrimSpace(event.DiagnosticEvent.Message) == "preview failed" || strings.HasPrefix(event.DiagnosticEvent.Message, "update cancelled") || strings.Contains(event.DiagnosticEvent.Message, "failed to register new resource") {
+			if strings.HasPrefix(event.DiagnosticEvent.Message, "update failed") || strings.TrimSpace(event.DiagnosticEvent.Message) == "preview failed" || strings.TrimSpace(event.DiagnosticEvent.Message) == "preview canceled" || strings.HasPrefix(event.DiagnosticEvent.Message, "update cancelled") || strings.Contains(event.DiagnosticEvent.Message, "failed to register new resource") {
 				continue
 			}
 
@@ -669,10 +669,15 @@ loop:
 					continue
 				}
 				var ev events.EngineEvent
-				if json.Unmarshal([]byte(line), &ev) == nil && ev.SummaryEvent != nil {
-					finished = true
-					break
+				if json.Unmarshal([]byte(line), &ev) != nil || ev.SummaryEvent == nil {
+					continue
 				}
+				// a deploy's preview finishing isn't the deploy finishing
+				if input.Command == "deploy" && ev.SummaryEvent.IsPreview {
+					continue
+				}
+				finished = true
+				break
 			}
 		}
 	}
