@@ -505,7 +505,8 @@ loop:
 	for {
 		bytes, err := reader.ReadBytes('\n')
 		read += int64(len(bytes))
-		if previewing && !planned && err == nil {
+		// every byte read, a part of a line too, so it's the file's start
+		if previewing && !planned {
 			previewStart = append(previewStart, bytes...)
 		}
 		if err != nil {
