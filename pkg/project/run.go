@@ -402,8 +402,14 @@ func (p *Project) Run(ctx context.Context, input *StackInput) error {
 	// changed before anything is. Pulumi starts the event log again for the
 	// update, and can do so before the preview's last events are read.
 	previewing := input.Command == "deploy" && input.PolicyPath != ""
-	var previewFirst []byte
+	// the preview's log up to its first planned step, which the update's
+	// log doesn't have
+	var previewStart []byte
+	planned := false
 	var read int64
+	// what the program logged in the preview, shown only if the update
+	// doesn't run, as the update logs it again
+	var previewDiagnostics []*apitype.DiagnosticEvent
 	// The preview and the update each report an advisory policy
 	advisories := map[string]bool{}
 
@@ -480,12 +486,13 @@ loop:
 	for {
 		bytes, err := reader.ReadBytes('\n')
 		read += int64(len(bytes))
-		if previewing && previewFirst == nil && err == nil {
-			previewFirst = bytes
+		if previewing && !planned && err == nil {
+			previewStart = append(previewStart, bytes...)
+			planned = strings.Contains(string(bytes), `"planning":true`)
 		}
 		if err != nil {
 			if err == io.EOF {
-				if previewing && previewFirst != nil && eventLogRestarted(eventlog, read, previewFirst) {
+				if previewing && len(previewStart) > 0 && eventLogRestarted(eventlog, read, previewStart) {
 					log.Info("reading the update's event log")
 					if _, err := eventlog.Seek(0, io.SeekStart); err != nil {
 						return err
@@ -493,6 +500,7 @@ loop:
 					reader.Reset(eventlog)
 					read = 0
 					previewing = false
+					previewDiagnostics = nil
 					continue
 				}
 				select {
@@ -602,8 +610,10 @@ loop:
 			}
 		}
 
-		// The preview's errors still show, as the update doesn't run after one
-		if previewing && (event.DiagnosticEvent == nil || event.DiagnosticEvent.Severity != "error") {
+		if previewing {
+			if event.DiagnosticEvent != nil && event.DiagnosticEvent.Severity != "debug" {
+				previewDiagnostics = append(previewDiagnostics, event.DiagnosticEvent)
+			}
 			continue
 		}
 
@@ -618,6 +628,11 @@ loop:
 		if event.SummaryEvent != nil {
 			finished = true
 		}
+	}
+
+	// The update didn't run, so what the preview logged is shown
+	for _, diagnostic := range previewDiagnostics {
+		bus.Publish(diagnostic)
 	}
 
 	// fallback: re-read the event log if the tailing loop missed SummaryEvent
@@ -737,9 +752,10 @@ loop:
 }
 
 // Whether Pulumi has started the event log again, as it does for the update
-// after a preview: it's shorter than what was read of it, or it starts with
-// another line.
-func eventLogRestarted(file *os.File, read int64, first []byte) bool {
+// after a preview: it's shorter than what was read of it, or it doesn't start
+// with the preview's start. Through its first planned step, which the update
+// doesn't log, the preview's start is unlike any update's.
+func eventLogRestarted(file *os.File, read int64, previewStart []byte) bool {
 	info, err := file.Stat()
 	if err != nil {
 		return false
@@ -747,7 +763,7 @@ func eventLogRestarted(file *os.File, read int64, first []byte) bool {
 	if info.Size() < read {
 		return true
 	}
-	start := make([]byte, len(first))
+	start := make([]byte, len(previewStart))
 	n, _ := file.ReadAt(start, 0)
-	return !bytes.Equal(start[:n], first)
+	return !bytes.Equal(start[:n], previewStart)
 }
