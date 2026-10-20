@@ -34,6 +34,8 @@ func (cappedLog) Write(p []byte) (int, error) {
 	}
 	if logSize > 0 && logSize+int64(len(p)) > logLimit {
 		if next, err := startLogAgain(logFile); err == nil {
+			// counted from 0 even when it was opened again to add to, so
+			// that's tried again only once as much more is written
 			logFile, logSized, logSize = next, next, 0
 			debug.SetCrashOutput(logFile, debug.CrashOptions{})
 		}

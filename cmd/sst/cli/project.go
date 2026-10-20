@@ -26,6 +26,8 @@ var logFile = (func() *os.File {
 	if err != nil {
 		panic(err)
 	}
+	// what an earlier run's log moved there past its cap
+	os.Remove(tmpPath + ".1")
 	return logFile
 })()
 
@@ -76,8 +78,11 @@ func (c *Cli) InitProject() (*project.Project, error) {
 	godotenv.Load(filepath.Join(p.PathRoot(), ".env"))
 
 	if flag.SST_LOG == "" {
+		// what's logged meanwhile waits for the new file
+		logMu.Lock()
 		_, err = logFile.Seek(0, 0)
 		if err != nil {
+			logMu.Unlock()
 			return nil, err
 		}
 		sstLog := p.PathLog("sst")
@@ -85,12 +90,14 @@ func (c *Cli) InitProject() (*project.Project, error) {
 		os.MkdirAll(logPath, 0755)
 		nextLogFile, err := os.Create(sstLog)
 		if err != nil {
+			logMu.Unlock()
 			return nil, util.NewReadableError(err, "Could not create log file")
 		}
 		// what an earlier run's log moved there past its cap
 		os.Remove(sstLog + ".1")
 		_, err = io.Copy(nextLogFile, logFile)
 		if err != nil {
+			logMu.Unlock()
 			return nil, util.NewReadableError(err, "Could not copy log file")
 		}
 		logFile.Close()
@@ -100,7 +107,6 @@ func (c *Cli) InitProject() (*project.Project, error) {
 				slog.Error("failed to remove temp log file", "err", err)
 			}
 		}()
-		logMu.Lock()
 		logFile = nextLogFile
 		logMu.Unlock()
 	}
