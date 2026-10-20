@@ -1,8 +1,19 @@
-import { describe, beforeAll, it, expect } from "vitest";
-import "../../src/global.d.ts";
+/// <reference path="../../src/global.d.ts" />
+import { describe, beforeAll, it, expect, vi } from "vitest";
 import * as pulumi from "@pulumi/pulumi";
 import fs from "fs";
 import path from "path";
+
+// A service's image goes to the asset registry, which comes from the CLI
+vi.mock("../../src/components/aws/helpers/bootstrap", () => ({
+  bootstrap: {
+    forRegion: async () => ({
+      asset: "sst-asset-test",
+      assetEcrRegistryId: "123456789012",
+      assetEcrUrl: "123456789012.dkr.ecr.us-east-1.amazonaws.com/sst-asset",
+    }),
+  },
+}));
 
 // Create temp directories for Docker context resolution in fargate.ts
 const testRoot = path.join("/tmp", "sst-test-" + process.pid);
@@ -37,20 +48,27 @@ pulumi.runtime.setMocks(
       state: any;
     } {
       createdResources.push(args);
+      // a resource read with .get() can have no name input, and is then named
+      // after its resource
+      const name = args.inputs.name || args.name;
       return {
-        id: args.inputs.name + "_id",
+        id: name + "_id",
         state: {
           ...args.inputs,
-          arn: `arn:aws:mock:us-east-1:123456789:${args.type}/${args.inputs.name}`,
-          dnsName: `${args.inputs.name}.us-east-1.elb.amazonaws.com`,
+          arn: `arn:aws:mock:us-east-1:123456789:${args.type}/${name}`,
+          dnsName: `${name}.us-east-1.elb.amazonaws.com`,
           zoneId: "Z1234567890",
-          name: args.inputs.name || args.name,
+          name,
           status: "ACTIVE",
           tags: {
             "sst:ref:version": "1",
             "sst:ref:sg": "sg-mock-id",
             "sst:ref:vpc-id": "vpc-123",
           },
+          // The load balancer that Alb.get() reads
+          ...(args.id && args.type === "aws:lb/loadBalancer:LoadBalancer"
+            ? { securityGroups: ["sg-123"], vpcId: "vpc-123" }
+            : {}),
         },
       };
     },
@@ -124,9 +142,11 @@ describe("Service with external ALB", function () {
       });
 
       // Service should use the ALB's URL
-      pulumi.all([service.url]).apply(([url]) => {
-        expect(url).toBeDefined();
-      });
+      const [url, albUrl] = await new Promise<string[]>((resolve) =>
+        pulumi.all([service.url, alb.url]).apply(resolve),
+      );
+      expect(url).toMatch(/^http:\/\/TestAlbLoadBala-/);
+      expect(url).toBe(albUrl);
     });
 
     it("creates service with standard loadBalancer (no ALB instance)", async () => {
@@ -373,7 +393,12 @@ describe("Service with external ALB", function () {
         },
       });
 
-      expect(service).toBeDefined();
+      // the referenced load balancer's
+      const [url, albUrl] = await new Promise<string[]>((resolve) =>
+        pulumi.all([service.url, refAlb.url]).apply(resolve),
+      );
+      expect(url).toMatch(/^http:\/\/RefAlbForServic/);
+      expect(url).toBe(albUrl);
     });
   });
 });

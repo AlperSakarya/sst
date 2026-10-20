@@ -1,5 +1,5 @@
+/// <reference path="../../src/global.d.ts" />
 import { describe, beforeAll, it, expect } from "vitest";
-import "../../src/global.d.ts";
 import * as pulumi from "@pulumi/pulumi";
 
 // @ts-ignore
@@ -15,12 +15,15 @@ pulumi.runtime.setMocks(
       id: string;
       state: any;
     } {
+      // A resource without a name input, as a security group, or a resource
+      // read with .get(), is named after its resource.
+      const name = args.inputs.name || args.name;
       return {
-        id: args.inputs.name + "_id",
+        id: name + "_id",
         state: {
           ...args.inputs,
-          arn: `arn:aws:elasticloadbalancing:us-east-1:123456789:${args.type}/${args.inputs.name}`,
-          dnsName: `${args.inputs.name}.us-east-1.elb.amazonaws.com`,
+          arn: `arn:aws:elasticloadbalancing:us-east-1:123456789:${args.type}/${name}`,
+          dnsName: `${name}.us-east-1.elb.amazonaws.com`,
           zoneId: "Z1234567890",
           vpcId: "vpc-mock-id",
           securityGroups: ["sg-mock-id"],
@@ -61,9 +64,10 @@ describe("Alb", function () {
         listeners: [{ port: 80, protocol: "http" }],
       });
 
-      pulumi.all([alb.arn]).apply(([arn]) => {
-        expect(arn).toBeDefined();
-      });
+      const arn = await new Promise((resolve) => alb.arn.apply(resolve));
+      expect(arn).toMatch(
+        /:aws:lb\/loadBalancer:LoadBalancer\/TestAlbLoadBala-/,
+      );
     });
 
     it("exposes url without domain", async () => {
@@ -76,9 +80,10 @@ describe("Alb", function () {
         listeners: [{ port: 80, protocol: "http" }],
       });
 
-      pulumi.all([alb.url]).apply(([url]) => {
-        expect(url).toMatch(/^http:\/\//);
-      });
+      const url = await new Promise((resolve) => alb.url.apply(resolve));
+      expect(url).toMatch(
+        /^http:\/\/TestAlbUrlLoadB-[a-z]+\.us-east-1\.elb\.amazonaws\.com$/,
+      );
     });
 
     it("exposes security group ID", async () => {
@@ -91,9 +96,10 @@ describe("Alb", function () {
         listeners: [{ port: 80, protocol: "http" }],
       });
 
-      pulumi.all([alb.securityGroupId]).apply(([sgId]) => {
-        expect(sgId).toBeDefined();
-      });
+      const sgId = await new Promise((resolve) =>
+        alb.securityGroupId.apply(resolve),
+      );
+      expect(sgId).toBe("TestAlbSgSecurityGroup_id");
     });
 
     it("exposes nodes with loadBalancer, securityGroup, listeners", async () => {
@@ -113,7 +119,24 @@ describe("Alb", function () {
   });
 
   describe("#getListener", () => {
-    it("throws for non-existent listener on non-ref ALB", async () => {
+    it("returns a listener it declares", async () => {
+      const alb = new Alb("TestAlbDeclared", {
+        vpc: {
+          id: "vpc-123",
+          publicSubnets: ["subnet-a", "subnet-b"],
+          privateSubnets: ["subnet-c", "subnet-d"],
+        },
+        listeners: [{ port: 80, protocol: "http" }],
+      });
+
+      // the one it made, which is among its nodes before it's asked for
+      const declared = alb.nodes.listeners["HTTP80"];
+      expect(declared).toBeDefined();
+      expect(alb.getListener("http", 80)).toBe(declared);
+    });
+
+    // A listener added to the load balancer some other way is read from AWS
+    it("looks up a listener it doesn't declare", async () => {
       const alb = new Alb("TestAlbMissing", {
         vpc: {
           id: "vpc-123",
@@ -123,22 +146,11 @@ describe("Alb", function () {
         listeners: [{ port: 80, protocol: "http" }],
       });
 
-      expect(() => alb.getListener("https", 443)).toThrow(
-        /Listener "HTTPS:443" not found/,
-      );
-    });
-
-    it("error message includes ALB name", async () => {
-      const alb = new Alb("MyNamedAlb", {
-        vpc: {
-          id: "vpc-123",
-          publicSubnets: ["subnet-a", "subnet-b"],
-          privateSubnets: ["subnet-c", "subnet-d"],
-        },
-        listeners: [{ port: 80, protocol: "http" }],
-      });
-
-      expect(() => alb.getListener("https", 443)).toThrow(/MyNamedAlb/);
+      expect(alb.nodes.listeners["HTTPS443"]).toBeUndefined();
+      const listener = alb.getListener("https", 443);
+      const urn = await new Promise((resolve) => listener.urn.apply(resolve));
+      expect(urn).toMatch(/::TestAlbMissingListenerHTTPS443$/);
+      expect(alb.getListener("https", 443)).toBe(listener);
     });
   });
 
@@ -149,9 +161,10 @@ describe("Alb", function () {
         "arn:aws:elasticloadbalancing:us-east-1:123456789:loadbalancer/app/my-alb/abc123",
       );
 
-      pulumi.all([alb.arn]).apply(([arn]) => {
-        expect(arn).toBeDefined();
-      });
+      const arn = await new Promise((resolve) => alb.arn.apply(resolve));
+      expect(arn).toMatch(
+        /:aws:lb\/loadBalancer:LoadBalancer\/RefAlbLoadBalan/,
+      );
     });
 
     it("lazy discovers listener via getListener on ref ALB", async () => {
