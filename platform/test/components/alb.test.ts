@@ -15,14 +15,15 @@ pulumi.runtime.setMocks(
       id: string;
       state: any;
     } {
+      // A resource without a name input, as a security group, or a resource
+      // read with .get(), is named after its resource.
+      const name = args.inputs.name || args.name;
       return {
-        // a resource without a name input, as a security group, is named after
-        // its resource
-        id: (args.inputs.name || args.name) + "_id",
+        id: name + "_id",
         state: {
           ...args.inputs,
-          arn: `arn:aws:elasticloadbalancing:us-east-1:123456789:${args.type}/${args.inputs.name}`,
-          dnsName: `${args.inputs.name}.us-east-1.elb.amazonaws.com`,
+          arn: `arn:aws:elasticloadbalancing:us-east-1:123456789:${args.type}/${name}`,
+          dnsName: `${name}.us-east-1.elb.amazonaws.com`,
           zoneId: "Z1234567890",
           vpcId: "vpc-mock-id",
           securityGroups: ["sg-mock-id"],
@@ -162,7 +163,7 @@ describe("Alb", function () {
 
       const arn = await new Promise((resolve) => alb.arn.apply(resolve));
       expect(arn).toMatch(
-        /:aws:lb\/loadBalancer:LoadBalancer\/RefAlbLoadBalan-/,
+        /:aws:lb\/loadBalancer:LoadBalancer\/RefAlbLoadBalan/,
       );
     });
 
