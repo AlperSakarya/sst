@@ -30,8 +30,10 @@ var logFile = (func() *os.File {
 	if err != nil {
 		panic(err)
 	}
-	// what an earlier run's log moved there past its cap
-	os.Remove(tmpPath + ".1")
+	if flag.SST_LOG != "" {
+		// what an earlier run's log moved there past its cap
+		os.Remove(tmpPath + ".1")
+	}
 	return logFile
 })()
 

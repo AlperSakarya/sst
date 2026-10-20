@@ -53,7 +53,11 @@ type logWriters []io.Writer
 func (w logWriters) Write(p []byte) (int, error) {
 	var failed error
 	for _, writer := range w {
-		if _, err := writer.Write(p); err != nil && failed == nil {
+		n, err := writer.Write(p)
+		if err == nil && n < len(p) {
+			err = io.ErrShortWrite
+		}
+		if err != nil && failed == nil {
 			failed = err
 		}
 	}
