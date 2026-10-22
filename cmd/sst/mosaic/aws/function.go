@@ -528,14 +528,18 @@ func function(ctx context.Context, input input) {
 		return failed
 	}
 
-	startWorker := func(functionID string, workerID string) bool {
+	// startWorker starts a worker for a function. When it can't, it says why, for
+	// the init error its bridge gets: the function's build failed, or its runtime
+	// couldn't run it. The bridge's init and its first invocation can be handled
+	// in either order, and the reason is the same.
+	startWorker := func(functionID string, workerID string) (bool, string) {
 		build := getBuildOutput(functionID)
 		if build == nil {
-			return false
+			return false, "Function failed to build"
 		}
 		target, ok := targets[functionID]
 		if !ok {
-			return false
+			return false, "Function failed to start"
 		}
 		worker, err := input.project.Runtime.Run(ctx, &runtime.RunInput{
 			CfgPath:    input.project.PathConfig(),
@@ -548,7 +552,7 @@ func function(ctx context.Context, input input) {
 		})
 		if err != nil {
 			log.Error("failed to run worker", "error", err)
-			return false
+			return false, "Function failed to start"
 		}
 		streaming := false
 		for _, e := range workerEnv[workerID] {
@@ -594,7 +598,7 @@ func function(ctx context.Context, input input) {
 		stateMu.Unlock()
 		delete(stoppedAt, workerID)
 
-		return true
+		return true, ""
 	}
 
 	// failedToStart tells the bridge of a worker that couldn't start, as when
@@ -644,10 +648,9 @@ func function(ctx context.Context, input input) {
 	// restart starts a worker again for the invocations queued for it.
 	restart := func(functionID string, workerID string) {
 		log.Info("starting worker again for its queued invocations", "workerID", workerID)
-		if startWorker(functionID, workerID) {
-			return
+		if ok, why := startWorker(functionID, workerID); !ok {
+			failedToStart(functionID, workerID, why)
 		}
-		failedToStart(functionID, workerID, "Function failed to start")
 	}
 
 	// restartOrDeferWorker starts a worker again after its function was built,
@@ -860,8 +863,8 @@ func function(ctx context.Context, input input) {
 				log.Info("worker init", "workerID", msg.Source, "functionID", init.FunctionID)
 				workerEnv[workerID] = init.Environment
 				workerFunction[workerID] = init.FunctionID
-				if ok := startWorker(init.FunctionID, workerID); !ok {
-					failedToStart(init.FunctionID, workerID, "Function failed to build")
+				if ok, why := startWorker(init.FunctionID, workerID); !ok {
+					failedToStart(init.FunctionID, workerID, why)
 				}
 			}
 
