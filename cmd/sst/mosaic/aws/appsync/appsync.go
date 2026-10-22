@@ -88,6 +88,7 @@ func getHTTPClient() *http.Client {
 }
 
 type Connection struct {
+	// the WebSocket, which a reconnect replaces, under socketLock
 	conn             *websocket.Conn
 	cfg              aws.Config
 	httpEndpoint     string
@@ -145,8 +146,8 @@ func Dial(
 
 	go func() {
 		<-ctx.Done()
-		if result.conn != nil {
-			result.conn.Close()
+		if conn := result.webSocket(); conn != nil {
+			conn.Close()
 		}
 		result.subscriptionsLock.Lock()
 		defer result.subscriptionsLock.Unlock()
@@ -191,7 +192,9 @@ func (c *Connection) connect(ctx context.Context) error {
 	conn.WriteJSON(map[string]interface{}{
 		"type": "connection_init",
 	})
+	c.socketLock.Lock()
 	c.conn = conn
+	c.socketLock.Unlock()
 
 	msg := map[string]interface{}{}
 	err = conn.ReadJSON(&msg)
@@ -269,7 +272,7 @@ func (c *Connection) connect(ctx context.Context) error {
 func (c *Connection) reconnect(ctx context.Context, stale *websocket.Conn) {
 	c.reconnectLock.Lock()
 	defer c.reconnectLock.Unlock()
-	if c.conn != stale {
+	if c.webSocket() != stale {
 		return
 	}
 	stale.Close()
@@ -314,7 +317,7 @@ func (c *Connection) Reconnect(ctx context.Context) {
 			c.reconnectLock.Unlock()
 			return
 		}
-		stale := c.conn
+		stale := c.webSocket()
 		c.reconnectLock.Unlock()
 		c.reconnect(c.ctx, stale)
 	}()
@@ -372,8 +375,9 @@ func (c *Connection) subscribe(ctx context.Context, channel string, subscription
 		Channel: channel,
 		Out:     tmp,
 	})
+	conn := c.webSocket()
 	c.writeLock.Lock()
-	c.conn.WriteJSON(map[string]interface{}{
+	conn.WriteJSON(map[string]interface{}{
 		"type":          "subscribe",
 		"id":            subscriptionID,
 		"channel":       channel,

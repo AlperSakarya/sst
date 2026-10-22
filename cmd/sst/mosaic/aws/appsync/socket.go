@@ -177,6 +177,12 @@ func (c *Connection) currentSocket() *socket {
 	return c.socket
 }
 
+func (c *Connection) webSocket() *websocket.Conn {
+	c.socketLock.Lock()
+	defer c.socketLock.Unlock()
+	return c.conn
+}
+
 // PublishOverSocket publishes an event as Publish does, over the connection's
 // WebSocket where it can, which reaches a subscriber about 50 ms sooner. When
 // the socket is over its share of AppSync's limit, or a publish on it isn't
