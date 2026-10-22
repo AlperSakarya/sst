@@ -11,8 +11,6 @@ permissions:
   id-token: write
   contents: write
   packages: write
-  # to start the docs workflow
-  actions: write
 
 jobs:
   goreleaser:
@@ -210,16 +208,6 @@ jobs:
         env:
           NPM_CONFIG_PROVENANCE: true
 
-      # Builds the docs site again, as its changelog lists the releases when
-      # it's built. A release made with this workflow's token doesn't start
-      # other workflows itself, but a workflow_dispatch can. The release is out
-      # by now, so this failing doesn't hold up the Discord post.
-      - name: Update the docs site's changelog
-        continue-on-error: true
-        run: gh workflow run docs.yml --repo "$GITHUB_REPOSITORY" --ref main
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
       # Posts the release notes to the Discord announcements channel. It's
       # skipped while the DISCORD_WEBHOOK_URL secret isn't set.
       - name: Announce on Discord
@@ -229,3 +217,18 @@ jobs:
           GH_REPO: ${{ github.repository }}
           TAG: ${{ github.ref_name }}
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+
+  # Builds the docs site again once the release is out, as its changelog lists
+  # the releases when it's built. A release made with the workflow's token
+  # doesn't start other workflows itself, but a workflow_dispatch can. It's a
+  # job of its own, so only it can start a workflow.
+  docs:
+    needs: goreleaser
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+    steps:
+      - name: Update the docs site's changelog
+        run: gh workflow run docs.yml --repo "$GITHUB_REPOSITORY" --ref main
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
