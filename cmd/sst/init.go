@@ -210,7 +210,7 @@ func CmdInit(cli *cli.Cli) error {
 		template = "js-" + home
 	}
 
-	instructions, err := project.Create(template, home)
+	instructions, err := project.Create(template, home, version)
 	if err != nil {
 		return err
 	}
