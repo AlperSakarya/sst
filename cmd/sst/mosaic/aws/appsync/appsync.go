@@ -211,6 +211,7 @@ func (c *Connection) connect(ctx context.Context) error {
 	c.socketLock.Lock()
 	c.socket = published
 	c.socketLock.Unlock()
+	c.socketBudget.reset()
 
 	timer := time.NewTimer(duration)
 	go func() {
@@ -376,13 +377,17 @@ func (c *Connection) subscribe(ctx context.Context, channel string, subscription
 		Out:     tmp,
 	})
 	conn := c.webSocket()
+	// with a deadline, as a publish's write has, so a stalled one doesn't hold
+	// up the publishes waiting to write
 	c.writeLock.Lock()
+	conn.SetWriteDeadline(time.Now().Add(socketWriteTimeout))
 	conn.WriteJSON(map[string]interface{}{
 		"type":          "subscribe",
 		"id":            subscriptionID,
 		"channel":       channel,
 		"authorization": auth,
 	})
+	conn.SetWriteDeadline(time.Time{})
 	c.writeLock.Unlock()
 	select {
 	case <-tmp:

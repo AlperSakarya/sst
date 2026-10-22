@@ -23,7 +23,8 @@ import (
 
 // fakeEventAPI stands in for an Event API. Its HTTPS endpoint takes publishes,
 // and its WebSocket takes subscribes and publishes, and answers each publish as
-// its mode says: "ack", "silent" (no answer, as for a throttled one), "error"
+// its mode says: "ack", "failed" (a publish_success that lists the event as
+// failed), "silent" (no answer, as for a throttled one), "error"
 // (a publish_error), "throttle" (AppSync's LimitExceededError, which names no
 // publish) or "close" (the socket closes).
 type fakeEventAPI struct {
@@ -84,6 +85,9 @@ func (f *fakeEventAPI) serveSocket(conn *websocket.Conn) {
 			case "ack":
 				conn.WriteJSON(map[string]interface{}{"type": "publish_success", "id": msg["id"],
 					"successful": []map[string]interface{}{{"identifier": "a", "index": 0}}, "failed": []interface{}{}})
+			case "failed":
+				conn.WriteJSON(map[string]interface{}{"type": "publish_success", "id": msg["id"],
+					"successful": []interface{}{}, "failed": []map[string]interface{}{{"identifier": "a", "index": 0, "code": 400, "message": "no"}}})
 			case "error":
 				conn.WriteJSON(map[string]interface{}{"type": "publish_error", "id": msg["id"],
 					"errors": []map[string]string{{"errorType": "BadRequestException", "message": "no"}}})
@@ -238,6 +242,48 @@ func TestPublishOverSocketFallsBackOnAnError(t *testing.T) {
 	}
 	if socket, https := f.counts(); socket != 1 || https != 1 {
 		t.Fatalf("published %d over the socket and %d over HTTPS, want 1 and 1", socket, https)
+	}
+}
+
+// AppSync can answer a publish with success, and list its event as failed.
+func TestPublishOverSocketFallsBackWhenItsEventFailed(t *testing.T) {
+	setTimings(t, 5*time.Second, time.Hour, time.Hour)
+	f := newFakeEventAPI(t, "failed")
+	conn := f.connection()
+	start := time.Now()
+	if err := conn.PublishOverSocket(context.Background(), "c", "event"); err != nil {
+		t.Fatal(err)
+	}
+	if took := time.Since(start); took > 2*time.Second {
+		t.Fatalf("the publish took %v, waiting for an acknowledgement it had", took)
+	}
+	if socket, https := f.counts(); socket != 1 || https != 1 {
+		t.Fatalf("published %d over the socket and %d over HTTPS, want 1 and 1", socket, https)
+	}
+}
+
+// A pause after a publish wasn't acknowledged is for that socket, which may be
+// dead, so the one a reconnect makes is used straight away.
+func TestPublishOverSocketUsesTheSocketAReconnectMakes(t *testing.T) {
+	setTimings(t, 50*time.Millisecond, time.Hour, time.Hour)
+	f := newFakeEventAPI(t, "silent")
+	conn := f.connection()
+	if err := conn.PublishOverSocket(context.Background(), "c", "first"); err != nil {
+		t.Fatal(err)
+	}
+	f.setMode("ack")
+	if err := conn.PublishOverSocket(context.Background(), "c", "second"); err != nil {
+		t.Fatal(err)
+	}
+	if socket, https := f.counts(); socket != 1 || https != 2 {
+		t.Fatalf("published %d over the socket and %d over HTTPS, want the second over HTTPS only", socket, https)
+	}
+	conn.Reconnect(context.Background())
+	if err := conn.PublishOverSocket(context.Background(), "c", "third"); err != nil {
+		t.Fatal(err)
+	}
+	if socket, https := f.counts(); socket != 2 || https != 2 {
+		t.Fatalf("published %d over the socket and %d over HTTPS, want the third over the new socket", socket, https)
 	}
 }
 

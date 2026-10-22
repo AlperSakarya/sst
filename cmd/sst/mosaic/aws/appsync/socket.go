@@ -114,8 +114,10 @@ func (s *socket) handle(msg map[string]interface{}) bool {
 	publishID, _ := msg["id"].(string)
 	switch msg["type"] {
 	case "publish_success":
+		// a publish has one event, so one that failed is all of it
 		if failed, ok := msg["failed"].([]interface{}); ok && len(failed) > 0 {
-			log.Error("event not published", "response", fmt.Sprint(msg))
+			s.resolve(publishID, fmt.Errorf("event not published: %v", failed))
+			return true
 		}
 		s.resolve(publishID, nil)
 		return true
@@ -161,6 +163,15 @@ func (b *socketBudget) take(now time.Time) bool {
 	}
 	b.sent = append(b.sent, now)
 	return true
+}
+
+// reset starts the count again, without a pause, for a new socket: AppSync's
+// limit is on each connection, and a pause was for the socket that's gone.
+func (b *socketBudget) reset() {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.sent = nil
+	b.offUntil = time.Time{}
 }
 
 func (b *socketBudget) pause(now time.Time, d time.Duration) {
