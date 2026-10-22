@@ -106,10 +106,9 @@ type Connection struct {
 
 	// the WebSocket's publishing side, replaced with the connection; writeLock
 	// is held for every write to a WebSocket, which takes one writer at a time
-	socket       *socket
-	socketLock   sync.Mutex
-	writeLock    sync.Mutex
-	socketBudget socketBudget
+	socket     *socket
+	socketLock sync.Mutex
+	writeLock  sync.Mutex
 }
 
 type SubscriptionInfo struct {
@@ -211,7 +210,6 @@ func (c *Connection) connect(ctx context.Context) error {
 	c.socketLock.Lock()
 	c.socket = published
 	c.socketLock.Unlock()
-	c.socketBudget.reset()
 
 	timer := time.NewTimer(duration)
 	go func() {

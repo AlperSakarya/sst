@@ -26,7 +26,8 @@ import (
 // its mode says: "ack", "failed" (a publish_success that lists the event as
 // failed), "silent" (no answer, as for a throttled one), "error"
 // (a publish_error), "throttle" (AppSync's LimitExceededError, which names no
-// publish) or "close" (the socket closes).
+// publish), "close" (the socket closes) or "stall" (the socket isn't read
+// from, as one that stopped taking data, and the next one is as "ack").
 type fakeEventAPI struct {
 	t   *testing.T
 	srv *httptest.Server
@@ -68,6 +69,16 @@ func (f *fakeEventAPI) serveSocket(conn *websocket.Conn) {
 		return
 	}
 	conn.WriteJSON(map[string]interface{}{"type": "connection_ack", "connectionTimeoutMs": 300000})
+	f.mu.Lock()
+	stall := f.mode == "stall"
+	if stall {
+		f.mode = "ack"
+	}
+	f.mu.Unlock()
+	if stall {
+		<-f.t.Context().Done()
+		return
+	}
 	for {
 		var msg map[string]interface{}
 		if conn.ReadJSON(&msg) != nil {
@@ -205,7 +216,7 @@ func TestPublishOverSocketFallsBackWithoutAnAck(t *testing.T) {
 // AppSync says it throttled a publish, but not which, so whatever waits on the
 // socket goes over HTTPS at once, and the socket isn't used for a moment.
 func TestPublishOverSocketFallsBackWhenThrottled(t *testing.T) {
-	setTimings(t, 5*time.Second, time.Hour, 200*time.Millisecond)
+	setTimings(t, 5*time.Second, time.Hour, time.Second)
 	f := newFakeEventAPI(t, "throttle")
 	conn := f.connection()
 	start := time.Now()
@@ -225,7 +236,7 @@ func TestPublishOverSocketFallsBackWhenThrottled(t *testing.T) {
 	if socket, _ := f.counts(); socket != 1 {
 		t.Fatal("published over the socket straight after it was throttled")
 	}
-	time.Sleep(300 * time.Millisecond)
+	time.Sleep(1200 * time.Millisecond)
 	if err := conn.PublishOverSocket(context.Background(), "c", "event"); err != nil {
 		t.Fatal(err)
 	}
@@ -284,6 +295,38 @@ func TestPublishOverSocketUsesTheSocketAReconnectMakes(t *testing.T) {
 	}
 	if socket, https := f.counts(); socket != 2 || https != 2 {
 		t.Fatalf("published %d over the socket and %d over HTTPS, want the third over the new socket", socket, https)
+	}
+}
+
+// A write that fails, as one that times out on a socket that stopped taking
+// data, leaves the WebSocket taking no more, though it can go on reading. The
+// publish goes over HTTPS, and the socket is closed, so a reconnect makes a new
+// one, which is used.
+func TestPublishOverSocketReconnectsAfterAWriteFails(t *testing.T) {
+	setTimings(t, 5*time.Second, time.Hour, time.Hour)
+	write := socketWriteTimeout
+	socketWriteTimeout = 100 * time.Millisecond
+	t.Cleanup(func() { socketWriteTimeout = write })
+	f := newFakeEventAPI(t, "stall")
+	conn := f.connection()
+	stalled := conn.currentSocket()
+	// more than the connection's buffers hold, so the write waits on them
+	if err := conn.PublishOverSocket(context.Background(), "c", strings.Repeat("x", 32<<20)); err != nil {
+		t.Fatal(err)
+	}
+	if socket, https := f.counts(); socket != 0 || https != 1 {
+		t.Fatalf("published %d over the socket and %d over HTTPS, want 0 and 1", socket, https)
+	}
+	for start := time.Now(); conn.currentSocket() == stalled; time.Sleep(10 * time.Millisecond) {
+		if time.Since(start) > 5*time.Second {
+			t.Fatal("the socket whose write failed wasn't replaced")
+		}
+	}
+	if err := conn.PublishOverSocket(context.Background(), "c", "event"); err != nil {
+		t.Fatal(err)
+	}
+	if socket, https := f.counts(); socket != 1 || https != 1 {
+		t.Fatalf("published %d over the socket and %d over HTTPS, want the next over the new socket", socket, https)
 	}
 }
 

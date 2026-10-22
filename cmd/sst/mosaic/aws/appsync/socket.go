@@ -40,13 +40,15 @@ var errSocketClosed = errors.New("the socket closed")
 var errSocketThrottled = errors.New("AppSync throttled a publish on the socket")
 
 // socket is one WebSocket connection, for publishing: what's waiting for an
-// acknowledgement on it, and whether it's closed. A reconnect makes a new one.
+// acknowledgement on it, whether it's closed, and its share of AppSync's limit,
+// which is on each connection. A reconnect makes a new one.
 type socket struct {
 	conn    *websocket.Conn
 	write   *sync.Mutex
 	mu      sync.Mutex
 	pending map[string]chan error
 	closed  bool
+	budget  socketBudget
 }
 
 func newSocket(conn *websocket.Conn, write *sync.Mutex) *socket {
@@ -136,8 +138,8 @@ func (s *socket) handle(msg map[string]interface{}) bool {
 	return false
 }
 
-// socketBudget keeps the publishes over a connection's socket under AppSync's
-// limit, and off for a while after one went wrong.
+// socketBudget keeps the publishes over a socket under AppSync's limit, and off
+// for a while after one went wrong. A new socket starts with a new one.
 type socketBudget struct {
 	mu       sync.Mutex
 	sent     []time.Time
@@ -163,15 +165,6 @@ func (b *socketBudget) take(now time.Time) bool {
 	}
 	b.sent = append(b.sent, now)
 	return true
-}
-
-// reset starts the count again, without a pause, for a new socket: AppSync's
-// limit is on each connection, and a pause was for the socket that's gone.
-func (b *socketBudget) reset() {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	b.sent = nil
-	b.offUntil = time.Time{}
 }
 
 func (b *socketBudget) pause(now time.Time, d time.Duration) {
@@ -213,7 +206,7 @@ func (c *Connection) PublishOverSocket(ctx context.Context, channel string, even
 
 func (c *Connection) publishOverSocket(ctx context.Context, channel string, event interface{}) error {
 	s := c.currentSocket()
-	if s == nil || !c.socketBudget.take(time.Now()) {
+	if s == nil || !s.budget.take(time.Now()) {
 		return errSocketUnavailable
 	}
 	eventJson, err := json.Marshal(event)
@@ -243,7 +236,11 @@ func (c *Connection) publishOverSocket(ctx context.Context, channel string, even
 	})
 	if err != nil {
 		s.forget(publishID)
-		c.socketBudget.pause(time.Now(), socketPauseAfterTimeout)
+		s.budget.pause(time.Now(), socketPauseAfterTimeout)
+		// A WebSocket whose write failed takes no more, while it goes on reading
+		// AppSync's keep-alives, so nothing would replace it. Closed, its reader
+		// fails what's waiting on it, and reconnects.
+		s.conn.Close()
 		return err
 	}
 	timer := time.NewTimer(socketAckTimeout)
@@ -251,12 +248,12 @@ func (c *Connection) publishOverSocket(ctx context.Context, channel string, even
 	select {
 	case err := <-answer:
 		if err == errSocketThrottled {
-			c.socketBudget.pause(time.Now(), socketPauseAfterThrottle)
+			s.budget.pause(time.Now(), socketPauseAfterThrottle)
 		}
 		return err
 	case <-timer.C:
 		s.forget(publishID)
-		c.socketBudget.pause(time.Now(), socketPauseAfterTimeout)
+		s.budget.pause(time.Now(), socketPauseAfterTimeout)
 		return errors.New("no acknowledgement")
 	case <-ctx.Done():
 		s.forget(publishID)
