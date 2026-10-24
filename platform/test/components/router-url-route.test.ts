@@ -49,12 +49,19 @@ pulumi.runtime.setMocks(
   false,
 );
 
-async function settle() {
-  for (let i = 0; i < 50; i++) {
+async function settle(host: string) {
+  const deadline = Date.now() + 5000;
+  while (Date.now() < deadline) {
+    const found = captured.routeMetadata.some(
+      (m) =>
+        !!m && typeof m === "object" && (m as { host?: unknown }).host === host,
+    );
+    if (found) return;
     const { promise, resolve } = Promise.withResolvers<void>();
     setImmediate(resolve);
     await promise;
   }
+  throw new Error(`Route metadata was not captured for ${host}`);
 }
 
 function getOrigin(host: string): Record<string, unknown> {
@@ -114,7 +121,7 @@ describe("Router URL route protection", () => {
         "abcdefghijklmnopqrstuvwxyz234567.lambda-url.us-east-1.on.aws";
 
       router.route("/api", `https://${host}`);
-      await settle();
+      await settle(host);
 
       expect(getOrigin(host).originAccessControlConfig).toEqual({
         enabled: true,
@@ -130,7 +137,7 @@ describe("Router URL route protection", () => {
     const host = "abcdefghijklmnopqrstuvwxyz234567.lambda-url.us-east-1.on.aws";
 
     router.route("/api", `http://${host}`);
-    await settle();
+    await settle(host);
 
     const origin = getOrigin(host);
     expect(origin.originAccessControlConfig).toBeDefined();
@@ -142,7 +149,7 @@ describe("Router URL route protection", () => {
     const host = "abcdefghijklmnopqrstuvwxyz234567.lambda-url.us-east-1.on.aws";
 
     router.route("/api", `https://${host}`);
-    await settle();
+    await settle(host);
 
     expect(getOrigin(host).originAccessControlConfig).toBeUndefined();
   });
@@ -152,7 +159,7 @@ describe("Router URL route protection", () => {
     const host = "api.example.com";
 
     router.route("/api", `https://${host}`);
-    await settle();
+    await settle(host);
 
     expect(getOrigin(host).originAccessControlConfig).toBeUndefined();
   });
@@ -164,7 +171,7 @@ describe("Router URL route protection", () => {
     const router = createRouter("oac");
 
     router.route("/api", `https://${host}`);
-    await settle();
+    await settle(host);
 
     expect(getOrigin(host).originAccessControlConfig).toBeUndefined();
   });
