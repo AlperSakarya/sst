@@ -2,6 +2,12 @@ import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import * as pulumi from "@pulumi/pulumi";
 import type { Router as RouterType } from "../../src/components/aws/router";
 
+// Suppress Pulumi "Trace events are unavailable" errors in test environment
+process.on("unhandledRejection", (err: any) => {
+  if (err?.code === "ERR_TRACE_EVENTS_UNAVAILABLE") return;
+  throw err;
+});
+
 const captured = vi.hoisted(() => ({ routeMetadata: [] as unknown[] }));
 
 vi.mock("../../src/components/aws/router-base-route", () => ({

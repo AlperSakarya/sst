@@ -1086,6 +1086,16 @@ export interface RouterArgs {
    * :::
    *
    * :::note
+   * A Lambda function URL added with `router.route()` is signed too, when its host
+   * looks like `<id>.lambda-url.<region>.on.aws`. The function URL needs `"iam"`
+   * authorization. `router.route()` only receives a URL, so it cannot create the
+   * Lambda permissions. Allow the `cloudfront.amazonaws.com` principal to call
+   * `lambda:InvokeFunctionUrl` and `lambda:InvokeFunction` on the function, with
+   * this Router's distribution as the source ARN. With `"oac"`, `POST` requests
+   * through the route also need the `x-amz-content-sha256` header.
+   * :::
+   *
+   * :::note
    * When removing a stage that uses `"oac-with-edge-signing"`, deletion may take
    * 5-10 minutes while AWS removes the Lambda@Edge replicated functions from all
    * edge locations.
@@ -2454,6 +2464,11 @@ async function handler(event) {
    *
    * Here something like `/api/users/profile` will be routed to
    * `https://api.example.com/users/profile`.
+   *
+   * If the Router has [`protection`](#protection) set and the URL is a Lambda function
+   * URL (`<id>.lambda-url.<region>.on.aws`), requests to it are signed with Origin
+   * Access Control. You need to grant CloudFront permission to invoke the function,
+   * as described under `protection`.
    */
   public route(
     pattern: Input<string>,
