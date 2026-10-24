@@ -293,6 +293,33 @@ func TestWatchLoopDrainsErrors(t *testing.T) {
 	require.NoError(t, <-done)
 }
 
+func TestWatchLoopStopsWhenErrorsCloses(t *testing.T) {
+	root := t.TempDir()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	events := make(chan fsnotify.Event)
+	errs := make(chan error)
+
+	done := make(chan error, 1)
+	go func() {
+		done <- watchLoop(
+			ctx, events, errs, slog.Default(), root, []string{root}, nil,
+			func(path string, publish bool) error { return nil },
+			func(path string, discovered bool) {},
+		)
+	}()
+
+	close(errs)
+
+	select {
+	case err := <-done:
+		require.NoError(t, err)
+	case <-time.After(5 * time.Second):
+		t.Fatal("watchLoop kept running after the Errors channel was closed")
+	}
+}
+
 func mustInfo(t *testing.T, path string) os.FileInfo {
 	t.Helper()
 	require.NoError(t, os.MkdirAll(path, 0755))
