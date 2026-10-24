@@ -1067,7 +1067,7 @@ export interface RouterArgs {
    * The available options are:
    * - `"none"`: Lambda URLs are publicly accessible.
    * - `"oac"`: Lambda URLs protected by CloudFront Origin Access Control. Requires
-   *   manual `x-amz-content-sha256` header for POST requests.
+   *   manual `x-amz-content-sha256` header for POST, PUT and PATCH requests.
    * - `"oac-with-edge-signing"`: Full protection with automatic header signing via
    *   Lambda@Edge. Works with external webhooks and callbacks. Higher cost and latency
    *   but works out of the box.
@@ -1091,8 +1091,9 @@ export interface RouterArgs {
    * authorization. `router.route()` only receives a URL, so it cannot create the
    * Lambda permissions. Allow the `cloudfront.amazonaws.com` principal to call
    * `lambda:InvokeFunctionUrl` and `lambda:InvokeFunction` on the function, with
-   * this Router's distribution as the source ARN. With `"oac"`, `POST` requests
-   * through the route also need the `x-amz-content-sha256` header.
+   * this Router's distribution as the source ARN. Set `invokedViaFunctionUrl: true`
+   * on the `lambda:InvokeFunction` permission. With `"oac"`, `POST`, `PUT` and
+   * `PATCH` requests through the route also need the `x-amz-content-sha256` header.
    * :::
    *
    * :::note
