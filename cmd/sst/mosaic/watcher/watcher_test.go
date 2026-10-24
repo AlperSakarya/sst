@@ -262,8 +262,9 @@ func TestWatchLoopDrainsErrors(t *testing.T) {
 	go func() {
 		select {
 		case errs <- errors.New("boom"):
-		case <-time.After(5 * time.Second):
-			t.Error("error send blocked: Errors channel was not drained")
+		case <-ctx.Done():
+			// The test ended without the error being read; the main select
+			// below reports the failure.
 			return
 		}
 		events <- fsnotify.Event{Name: filepath.Join(root, "main.go"), Op: fsnotify.Write}

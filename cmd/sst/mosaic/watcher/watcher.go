@@ -381,7 +381,10 @@ func watchLoop(
 			}
 			log.Info("file event", "path", event.Name, "op", event.Op)
 			publishChange(event.Name, false)
-		case err := <-errs:
+		case err, ok := <-errs:
+			if !ok {
+				return nil
+			}
 			// Drain the error channel. fsnotify's sendError blocks until the
 			// error is read, so leaving it unread wedges the reader goroutine
 			// and silently stops all further events.
