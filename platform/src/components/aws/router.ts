@@ -1087,13 +1087,17 @@ export interface RouterArgs {
    *
    * :::note
    * A Lambda function URL added with `router.route()` is signed too, when its host
-   * looks like `<id>.lambda-url.<region>.on.aws`. The function URL needs `"iam"`
-   * authorization. `router.route()` only receives a URL, so it cannot create the
+   * looks like `<id>.lambda-url.<region>.on.aws`. To make use of the protection, set the
+   * function URL's authorization to `"iam"`; a public one is signed as well but does not
+   * check the signature. `router.route()` only receives a URL, so it cannot create the
    * Lambda permissions. Allow the `cloudfront.amazonaws.com` principal to call
    * `lambda:InvokeFunctionUrl` and `lambda:InvokeFunction` on the function, with
    * this Router's distribution as the source ARN. Set `invokedViaFunctionUrl: true`
    * on the `lambda:InvokeFunction` permission. With `"oac"`, `POST`, `PUT` and
-   * `PATCH` requests through the route also need the `x-amz-content-sha256` header.
+   * `PATCH` requests to a function URL with `"iam"` authorization also need the
+   * `x-amz-content-sha256` header. The signature replaces the `Authorization` header
+   * of the viewer's request, so the function does not receive it. Send tokens in a
+   * different header.
    * :::
    *
    * :::note
