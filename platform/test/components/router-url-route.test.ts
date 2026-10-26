@@ -132,6 +132,17 @@ describe("Router URL route protection", () => {
     },
   );
 
+  it("signs the route when protection is an Output", async () => {
+    const router = createRouter("oac");
+
+    router.route("/api", `https://${fnHost}`, {
+      protection: pulumi.output(true),
+    });
+    await settle(fnHost);
+
+    expect(getOrigin(fnHost).originAccessControlConfig).toBeDefined();
+  });
+
   it("forces HTTPS for a signed Lambda function URL route", async () => {
     const router = createRouter("oac");
 

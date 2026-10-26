@@ -453,9 +453,10 @@ export interface RouterUrlRouteArgs extends RouteArgs {
    * It is off by default, because a URL can't tell a function URL with IAM
    * authorization from a public one, so the route has to say that it should be signed.
    *
-   * The signature replaces the `Authorization` header of the viewer's request. The
-   * function URL needs `"iam"` authorization, and CloudFront needs permission to
-   * invoke the function. [Read more](/docs/component/aws/router/#protection).
+   * The signature replaces the `Authorization` header of the viewer's request.
+   * Signing is meant for function URLs with `"iam"` authorization. A public one is
+   * signed too, but gains nothing. CloudFront needs permission to invoke the
+   * function. [Read more](/docs/component/aws/router/#protection).
    *
    * @default `false`
    * @example
