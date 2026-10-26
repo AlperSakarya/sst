@@ -1115,10 +1115,10 @@ export interface RouterArgs {
    * Allow the `cloudfront.amazonaws.com` principal to call `lambda:InvokeFunctionUrl`
    * and `lambda:InvokeFunction` on the function, with this Router's distribution as
    * the source ARN. Set `invokedViaFunctionUrl: true` on the `lambda:InvokeFunction`
-   * permission. With `"oac"`, `POST`, `PUT` and `PATCH` requests also need the
-   * `x-amz-content-sha256` header. The signature replaces the `Authorization` header
-   * of the viewer's request, so the function does not receive it. Send tokens in a
-   * different header.
+   * permission. With `"oac"`, `POST`, `PUT` and `PATCH` requests to a function URL
+   * with `"iam"` authorization also need the `x-amz-content-sha256` header. The
+   * signature replaces the `Authorization` header of the viewer's request, so the
+   * function does not receive it. Send tokens in a different header.
    * :::
    *
    * :::note
