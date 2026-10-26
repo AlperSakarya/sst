@@ -446,9 +446,12 @@ export interface RouterUrlRouteArgs extends RouteArgs {
    * Sign the requests to this route with the Router's [`protection`](/docs/component/aws/router/#protection).
    *
    * This only applies when the destination is a Lambda function URL (a host like
-   * `<id>.lambda-url.<region>.on.aws`) and the Router has `protection` set. A URL
-   * can't tell a function URL with IAM authorization from a public one, so the
-   * route has to say that it should be signed.
+   * `<id>.lambda-url.<region>.on.aws`) and the Router has `protection` set. For any
+   * other destination, such as a function URL behind a custom domain, the route is
+   * not signed and the option has no effect.
+   *
+   * It is off by default, because a URL can't tell a function URL with IAM
+   * authorization from a public one, so the route has to say that it should be signed.
    *
    * The signature replaces the `Authorization` header of the viewer's request. The
    * function URL needs `"iam"` authorization, and CloudFront needs permission to
@@ -1114,11 +1117,14 @@ export interface RouterArgs {
    * `router.route()` only receives a URL, so it cannot create the Lambda permissions.
    * Allow the `cloudfront.amazonaws.com` principal to call `lambda:InvokeFunctionUrl`
    * and `lambda:InvokeFunction` on the function, with this Router's distribution as
-   * the source ARN. Set `invokedViaFunctionUrl: true` on the `lambda:InvokeFunction`
-   * permission. With `"oac"`, `POST`, `PUT` and `PATCH` requests to a function URL
-   * with `"iam"` authorization also need the `x-amz-content-sha256` header. The
-   * signature replaces the `Authorization` header of the viewer's request, so the
-   * function does not receive it. Send tokens in a different header.
+   * the source ARN. Get the ARN with
+   * `router.nodes.cdn.apply((cdn) => cdn.nodes.distribution.arn)`. Set
+   * `invokedViaFunctionUrl: true` on the `lambda:InvokeFunction` permission.
+   *
+   * With `"oac"`, `POST`, `PUT` and `PATCH` requests to a function URL with `"iam"`
+   * authorization also need the `x-amz-content-sha256` header. The signature replaces
+   * the `Authorization` header of the viewer's request, so the function does not
+   * receive it. Send tokens in a different header.
    * :::
    *
    * :::note
