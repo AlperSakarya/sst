@@ -442,6 +442,27 @@ export interface RouterUrlRouteArgs extends RouteArgs {
    * ```
    */
   keepAliveTimeout?: Input<DurationSeconds>;
+  /**
+   * Sign the requests to this route with the Router's [`protection`](/docs/component/aws/router/#protection).
+   *
+   * This only applies when the destination is a Lambda function URL (a host like
+   * `<id>.lambda-url.<region>.on.aws`) and the Router has `protection` set. A URL
+   * can't tell a function URL with IAM authorization from a public one, so the
+   * route has to say that it should be signed.
+   *
+   * The signature replaces the `Authorization` header of the viewer's request. The
+   * function URL needs `"iam"` authorization, and CloudFront needs permission to
+   * invoke the function. [Read more](/docs/component/aws/router/#protection).
+   *
+   * @default `false`
+   * @example
+   * ```js
+   * {
+   *   protection: true
+   * }
+   * ```
+   */
+  protection?: Input<boolean>;
 }
 
 export interface RouterBucketRouteArgs extends RouteArgs {
@@ -1086,15 +1107,15 @@ export interface RouterArgs {
    * :::
    *
    * :::note
-   * A Lambda function URL added with `router.route()` is signed too, when its host
-   * looks like `<id>.lambda-url.<region>.on.aws`. To make use of the protection, set the
-   * function URL's authorization to `"iam"`; a public one is signed as well but does not
-   * check the signature. `router.route()` only receives a URL, so it cannot create the
-   * Lambda permissions. Allow the `cloudfront.amazonaws.com` principal to call
-   * `lambda:InvokeFunctionUrl` and `lambda:InvokeFunction` on the function, with
-   * this Router's distribution as the source ARN. Set `invokedViaFunctionUrl: true`
-   * on the `lambda:InvokeFunction` permission. With `"oac"`, `POST`, `PUT` and
-   * `PATCH` requests to a function URL with `"iam"` authorization also need the
+   * A Lambda function URL added with `router.route()` is signed when the route sets
+   * `protection: true`. It is off by default, because only you know whether the URL
+   * uses `"iam"` authorization. For example, `router.route("/api", fn.url, { protection: true })`.
+   *
+   * `router.route()` only receives a URL, so it cannot create the Lambda permissions.
+   * Allow the `cloudfront.amazonaws.com` principal to call `lambda:InvokeFunctionUrl`
+   * and `lambda:InvokeFunction` on the function, with this Router's distribution as
+   * the source ARN. Set `invokedViaFunctionUrl: true` on the `lambda:InvokeFunction`
+   * permission. With `"oac"`, `POST`, `PUT` and `PATCH` requests also need the
    * `x-amz-content-sha256` header. The signature replaces the `Authorization` header
    * of the viewer's request, so the function does not receive it. Send tokens in a
    * different header.
@@ -2426,6 +2447,11 @@ async function handler(event) {
   /**
    * Add a route to a destination URL.
    *
+   * If the Router has [`protection`](#protection) set, set `protection: true` in the
+   * route's `args` to sign requests to a Lambda function URL with Origin Access
+   * Control. It is off by default. CloudFront also needs permission to invoke the
+   * function, as described under `protection`.
+   *
    * @param pattern The path prefix to match for this route.
    * @param url The destination URL to route matching requests to.
    * @param args Configure the route.
@@ -2469,11 +2495,6 @@ async function handler(event) {
    *
    * Here something like `/api/users/profile` will be routed to
    * `https://api.example.com/users/profile`.
-   *
-   * If the Router has [`protection`](#protection) set and the URL is a Lambda function
-   * URL (`<id>.lambda-url.<region>.on.aws`), requests to it are signed with Origin
-   * Access Control. You need to grant CloudFront permission to invoke the function,
-   * as described under `protection`.
    */
   public route(
     pattern: Input<string>,

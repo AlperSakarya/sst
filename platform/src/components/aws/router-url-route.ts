@@ -48,6 +48,7 @@ export class RouterUrlRoute extends Component {
         const host = u.host;
         const protocol = u.protocol.slice(0, -1);
         const useOac =
+          routeArgs?.protection === true &&
           /^[a-z0-9]{32}\.lambda-url\.[a-z0-9-]+\.on\.aws$/.test(u.hostname) &&
           (protection.mode === "oac" ||
             protection.mode === "oac-with-edge-signing");

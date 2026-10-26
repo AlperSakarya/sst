@@ -113,17 +113,17 @@ describe("Router URL route protection", () => {
     captured.routeMetadata.length = 0;
   });
 
+  const fnHost = "abcdefghijklmnopqrstuvwxyz234567.lambda-url.us-east-1.on.aws";
+
   it.each(["oac", "oac-with-edge-signing"] as const)(
-    "applies %s protection to Lambda function URLs",
+    "signs a Lambda function URL route that sets protection under %s",
     async (protection) => {
       const router = createRouter(protection);
-      const host =
-        "abcdefghijklmnopqrstuvwxyz234567.lambda-url.us-east-1.on.aws";
 
-      router.route("/api", `https://${host}`);
-      await settle(host);
+      router.route("/api", `https://${fnHost}`, { protection: true });
+      await settle(fnHost);
 
-      expect(getOrigin(host).originAccessControlConfig).toEqual({
+      expect(getOrigin(fnHost).originAccessControlConfig).toEqual({
         enabled: true,
         signingBehavior: "always",
         signingProtocol: "sigv4",
@@ -132,33 +132,70 @@ describe("Router URL route protection", () => {
     },
   );
 
-  it("forces HTTPS for protected Lambda function URLs", async () => {
+  it("forces HTTPS for a signed Lambda function URL route", async () => {
     const router = createRouter("oac");
-    const host = "abcdefghijklmnopqrstuvwxyz234567.lambda-url.us-east-1.on.aws";
 
-    router.route("/api", `http://${host}`);
-    await settle(host);
+    router.route("/api", `http://${fnHost}`, { protection: true });
+    await settle(fnHost);
 
-    const origin = getOrigin(host);
+    const origin = getOrigin(fnHost);
     expect(origin.originAccessControlConfig).toBeDefined();
     expect(origin.protocol).toBeUndefined();
   });
 
-  it("does not apply OAC for the normalized default protection mode", async () => {
-    const router = createRouter("none");
-    const host = "abcdefghijklmnopqrstuvwxyz234567.lambda-url.us-east-1.on.aws";
+  it.each(["oac", "oac-with-edge-signing"] as const)(
+    "leaves a route unsigned by default under %s",
+    async (protection) => {
+      const router = createRouter(protection);
 
-    router.route("/api", `https://${host}`);
-    await settle(host);
+      router.route("/api", `https://${fnHost}`);
+      await settle(fnHost);
 
-    expect(getOrigin(host).originAccessControlConfig).toBeUndefined();
+      expect(getOrigin(fnHost).originAccessControlConfig).toBeUndefined();
+    },
+  );
+
+  it("leaves a route unsigned when other route args are set", async () => {
+    const router = createRouter("oac");
+
+    router.route("/api", `https://${fnHost}`, { connectionAttempts: 2 });
+    await settle(fnHost);
+
+    expect(getOrigin(fnHost).originAccessControlConfig).toBeUndefined();
   });
 
-  it("does not apply OAC to ordinary HTTPS origins", async () => {
+  it("leaves a route unsigned when protection is false", async () => {
+    const router = createRouter("oac");
+
+    router.route("/api", `https://${fnHost}`, { protection: false });
+    await settle(fnHost);
+
+    expect(getOrigin(fnHost).originAccessControlConfig).toBeUndefined();
+  });
+
+  it("keeps an http:// function URL as http:// when the route is not signed", async () => {
+    const router = createRouter("oac");
+
+    router.route("/api", `http://${fnHost}`);
+    await settle(fnHost);
+
+    expect(getOrigin(fnHost).protocol).toBe("http");
+  });
+
+  it("does not sign when the Router has no protection", async () => {
+    const router = createRouter("none");
+
+    router.route("/api", `https://${fnHost}`, { protection: true });
+    await settle(fnHost);
+
+    expect(getOrigin(fnHost).originAccessControlConfig).toBeUndefined();
+  });
+
+  it("does not sign an ordinary HTTPS origin", async () => {
     const router = createRouter("oac");
     const host = "api.example.com";
 
-    router.route("/api", `https://${host}`);
+    router.route("/api", `https://${host}`, { protection: true });
     await settle(host);
 
     expect(getOrigin(host).originAccessControlConfig).toBeUndefined();
@@ -167,10 +204,10 @@ describe("Router URL route protection", () => {
   it.each([
     "abcdefghijklmnopqrstuvwxyz.lambda-url.us-east-1.on.aws",
     "abcdefghijklmnopqrstuvwxyz234567.lambda-url.us-east-1.on.aws.example.com",
-  ])("does not apply OAC to spoofed Lambda URL hostname %s", async (host) => {
+  ])("does not sign the look-alike hostname %s", async (host) => {
     const router = createRouter("oac");
 
-    router.route("/api", `https://${host}`);
+    router.route("/api", `https://${host}`, { protection: true });
     await settle(host);
 
     expect(getOrigin(host).originAccessControlConfig).toBeUndefined();
