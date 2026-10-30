@@ -721,9 +721,11 @@ loop:
 	complete.Finished = finished
 	complete.Errors = errors
 	complete.ImportDiffs = importDiffs
-	// Skip on remove: the stage is gone, so the links are empty and regenerating
-	// would blank out the types the developer still needs to work against.
-	if input.Command != "remove" {
+	// A full remove leaves no stage, so its links are empty and regenerating
+	// would blank out the types the developer still needs to work against. A
+	// remove with a --target leaves the rest of the stage, so its types are
+	// regenerated from what remains.
+	if generatesTypes(input) {
 		types.Generate(p.PathConfig(), complete.Links, p.App().Types.Ignore)
 	}
 	defer bus.Publish(complete)
@@ -843,4 +845,11 @@ func (p *Project) removeAppSync() {
 	default:
 		slog.Warn("failed to remove the stage's appsync event api", "err", err)
 	}
+}
+
+// generatesTypes says whether a stack command regenerates the type files. Every
+// command does, except a remove of the whole stage: it leaves no links, so the
+// files would be rewritten empty.
+func generatesTypes(input *StackInput) bool {
+	return input.Command != "remove" || len(input.Target) > 0
 }
