@@ -37,7 +37,7 @@ pulumi.runtime.setMocks(
         id: args.inputs.name + "_id",
         state: {
           ...args.inputs,
-          arn: `arn:aws:mock:us-east-1:123456789012:${args.name}`,
+          arn: `arn:aws:mock:us-east-1:account:${args.name}`,
         },
       };
     },
@@ -52,6 +52,7 @@ pulumi.runtime.setMocks(
 
 const TYPES = {
   cfFunction: "aws:cloudfront/function:Function",
+  cfDistribution: "aws:cloudfront/distribution:Distribution",
 };
 
 function findResources(type: string) {
@@ -86,6 +87,35 @@ describe("Router catch-all route", function () {
       .map((fn) => fn.inputs.code as string)
       .join("\n");
     expect(code).toContain("statusCode: 404");
+  });
+
+  it("attaches the 404 function to the default cache behavior", async () => {
+    new Router("DefaultBehavior", {
+      routes: { "/api/*": "https://example.com" },
+    });
+    await settle();
+
+    // The function whose code answers with the 404 ...
+    const notFound = findResources(TYPES.cfFunction).filter((fn) =>
+      (fn.inputs.code as string).includes("statusCode: 404"),
+    );
+    expect(notFound).toHaveLength(1);
+
+    // ... is the viewer-request function of the distribution's default behavior,
+    // which is the one that handles a path no route matches.
+    const [distribution] = findResources(TYPES.cfDistribution);
+    const associations = await new Promise<any[]>((resolve) =>
+      pulumi
+        .output(distribution.inputs.defaultCacheBehavior)
+        .apply((behavior: any) =>
+          resolve(behavior.functionAssociations as any[]),
+        ),
+    );
+    const viewerRequests = associations.filter(
+      (a) => a.eventType === "viewer-request",
+    );
+    expect(viewerRequests).toHaveLength(1);
+    expect(String(viewerRequests[0].functionArn)).toContain(notFound[0].name);
   });
 
   it("does not inject a 404 when a /* route is defined", async () => {
