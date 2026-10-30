@@ -96,3 +96,25 @@ func TestBuildLeavesTheProjectSSTDirectoryAlone(t *testing.T) {
 	assert.Contains(t, string(contents), "own file")
 	assert.NotContains(t, string(contents), "injectedGlobals")
 }
+
+func TestBuildLeavesTheProjectSSTDirectoryAloneThroughASymlink(t *testing.T) {
+	real := t.TempDir()
+	link := filepath.Join(t.TempDir(), "link")
+	assert.NoError(t, os.Symlink(real, link))
+	outfile := filepath.Join(link, ".sst", "platform", "config.mjs")
+	assert.NoError(t, os.MkdirAll(filepath.Dir(outfile), 0755))
+	assert.NoError(t, os.WriteFile(filepath.Join(real, ".sst", "platform", "own.ts"), []byte(`export const own = "own file"`), 0644))
+
+	_, err := js.Build(js.EvalOptions{
+		Dir:     link,
+		Outfile: outfile,
+		Code:    `import { own } from "./.sst/platform/own"; console.log(own)`,
+		Globals: `globalThis.injectedGlobals = true`,
+	})
+	assert.NoError(t, err)
+
+	contents, err := os.ReadFile(outfile)
+	assert.NoError(t, err)
+	assert.Contains(t, string(contents), "own file")
+	assert.NotContains(t, string(contents), "injectedGlobals")
+}
