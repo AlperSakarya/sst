@@ -2704,7 +2704,7 @@ const CLOUDFRONT_FUNCTION_SAFE_HEADER_LIMIT = 10240 - 512;
 // Returned at the edge for the synthetic catch-all route that is added when the user
 // does not define a `/*` route. Without it, requests that match no route are forwarded
 // to the placeholder origin and come back as a 502 instead of a 404.
-export const CF_ROUTER_NOT_FOUND_INJECTION = `
+const CF_ROUTER_NOT_FOUND_INJECTION = `
 return {
   statusCode: 404,
   statusDescription: 'Not Found',
@@ -2717,9 +2717,10 @@ return {
   }
 };`;
 
-// NOTE: This string is size-sensitive — CloudFront Functions have a 10KB limit.
-// The 403 body is plain text on purpose: it keeps the block small, and it is the
-// body upstream chose. Don't put the HTML page back to look like a web server's.
+// NOTE: CF_BLOCK_CLOUDFRONT_URL_INJECTION is size-sensitive — CloudFront Functions
+// have a 10KB limit. Its 403 body is plain text on purpose: it keeps the block
+// small, and it is the body upstream chose. Don't put the HTML page back to look
+// like a web server's.
 export const CF_BLOCK_CLOUDFRONT_URL_INJECTION = minifyBody`
 if (event.request.headers.host.value.includes('cloudfront.net')) {
   return {
