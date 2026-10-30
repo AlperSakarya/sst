@@ -721,11 +721,10 @@ loop:
 	complete.Finished = finished
 	complete.Errors = errors
 	complete.ImportDiffs = importDiffs
-	// A remove that leaves no links, which is a remove of the whole stage or of
-	// its last component, would rewrite the types empty, and blank out the types
-	// the developer still needs to work against. A remove that leaves some of the
-	// stage, a --target or a remove that failed partway, regenerates them from
-	// what remains.
+	// A remove after which no links remain would rewrite the types empty, and
+	// blank out the types the developer still needs to work against. A remove
+	// after which some links remain, such as one with a --target or one that failed
+	// partway, regenerates them from what remains.
 	if generatesTypes(input, complete) {
 		types.Generate(p.PathConfig(), complete.Links, p.App().Types.Ignore)
 	}
