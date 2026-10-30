@@ -2708,6 +2708,9 @@ export const CF_ROUTER_NOT_FOUND_INJECTION = `
 return {
   statusCode: 404,
   statusDescription: 'Not Found',
+  headers: {
+    "content-type": { value: "text/html; charset=utf-8" }
+  },
   body: {
     encoding: "text",
     data: '<html><head><title>404 Not Found</title></head><body><center><h1>404 Not Found</h1></center></body></html>'

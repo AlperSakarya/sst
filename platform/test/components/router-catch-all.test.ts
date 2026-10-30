@@ -87,6 +87,10 @@ describe("Router catch-all route", function () {
       .map((fn) => fn.inputs.code as string)
       .join("\n");
     expect(code).toContain("statusCode: 404");
+    // the page is HTML, so it says so
+    expect(code).toContain(
+      '"content-type": { value: "text/html; charset=utf-8" }',
+    );
   });
 
   it("attaches the 404 function to the default cache behavior", async () => {
