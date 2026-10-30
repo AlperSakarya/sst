@@ -59,6 +59,14 @@ func Build(input EvalOptions) (esbuild.BuildResult, error) {
 		outfile = filepath.Join(input.Dir, ".sst", "platform", fmt.Sprintf("sst.config.%v.mjs", time.Now().UnixMilli()))
 	}
 	slog.Info("esbuild building", "out", outfile)
+	// esbuild reports the real path of a file, so the project's .sst directory is
+	// also compared by its real path, for a project opened through a symlink.
+	sstDirs := []string{filepath.Join(input.Dir, ".sst")}
+	if realDir, err := filepath.EvalSymlinks(input.Dir); err == nil {
+		if realSST := filepath.Join(realDir, ".sst"); realSST != sstDirs[0] {
+			sstDirs = append(sstDirs, realSST)
+		}
+	}
 	var err error
 	result := esbuild.Build(esbuild.BuildOptions{
 		Banner: map[string]string{
@@ -101,17 +109,16 @@ const __dirname = topLevelFileUrlToPath(new topLevelURL(".", import.meta.url))
 				Setup: func(build esbuild.PluginBuild) {
 					build.OnLoad(esbuild.OnLoadOptions{Filter: `\.(js|ts|jsx|tsx)$`},
 						func(args esbuild.OnLoadArgs) (esbuild.OnLoadResult, error) {
-							if filepath.HasPrefix(args.Path, filepath.Join(input.Dir, ".sst")) {
-								return esbuild.OnLoadResult{}, nil
+							for _, dir := range sstDirs {
+								if isWithinDir(args.Path, dir) {
+									return esbuild.OnLoadResult{}, nil
+								}
 							}
 							contents, err := os.ReadFile(args.Path)
 							if err != nil {
 								return esbuild.OnLoadResult{}, err
 							}
-							newContents := string(contents)
-							if !strings.Contains(args.Path, ".sst") {
-								newContents = input.Globals + "\n" + newContents
-							}
+							newContents := input.Globals + "\n" + string(contents)
 							return esbuild.OnLoadResult{
 								Contents: &newContents,
 								Loader:   esbuild.LoaderDefault,
@@ -155,6 +162,11 @@ const __dirname = topLevelFileUrlToPath(new topLevelURL(".", import.meta.url))
 	os.WriteFile(filepath.Join(input.Dir, ".sst", "esbuild.json"), []byte(analysis), 0644)
 
 	return result, nil
+}
+
+func isWithinDir(path, dir string) bool {
+	rel, err := filepath.Rel(dir, path)
+	return err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
 }
 
 func FormatError(input []esbuild.Message) string {
