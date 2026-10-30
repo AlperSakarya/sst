@@ -2459,6 +2459,9 @@ async function handler(event) {
    * Control. It is off by default. CloudFront also needs permission to invoke the
    * function, as described under `protection`.
    *
+   * A request that matches none of the Router's routes gets a 404, unless you add a
+   * `/*` route to catch it.
+   *
    * @param pattern The path prefix to match for this route.
    * @param url The destination URL to route matching requests to.
    * @param args Configure the route.
@@ -2533,6 +2536,9 @@ async function handler(event) {
 
   /**
    * Add a route to an S3 bucket.
+   *
+   * A request that matches none of the Router's routes gets a 404, unless you add a
+   * `/*` route to catch it.
    *
    * @param pattern The path prefix to match for this route.
    * @param bucket The S3 bucket to route matching requests to.
@@ -2736,7 +2742,7 @@ export const routerLookupCode = (kvNamespace: string) => minifyBody`
         routes = JSON.parse(chunks.join(""));
       }
     } catch (e) {}
-    return routes;
+    return Array.isArray(routes) ? routes : [];
   }
 
   async function matchRoute(routes) {

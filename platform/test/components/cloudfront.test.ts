@@ -839,6 +839,51 @@ describe("a request that matches no route", () => {
     expect(response.uri).toBe("/anything");
   });
 
+  it("reads a list of routes that is stored in chunks", async () => {
+    // The list is stored in parts when it is too long for one key.
+    const all = JSON.stringify(["bucket,route0,,/files"]);
+    const half = Math.floor(all.length / 2);
+    const { event, handler } = loadHandler({
+      ...request("/files/hello.txt"),
+      routes: [],
+      metadata: {},
+      kvGet: async (key: string) => {
+        if (key === "router:routes") return JSON.stringify({ parts: 2 });
+        if (key === "router:routes:0") return all.slice(0, half);
+        if (key === "router:routes:1") return all.slice(half);
+        if (key === "route0:metadata")
+          return JSON.stringify({ domain: "bucket.s3.us-east-1.amazonaws.com", origin: {} });
+        throw new Error("missing");
+      },
+    });
+
+    const response = await handler(event);
+
+    expect(response.statusCode).toBeUndefined();
+    expect(event.request.origin).toMatchObject({
+      domainName: "bucket.s3.us-east-1.amazonaws.com",
+    });
+  });
+
+  it("passes the request on when a chunk of the routes can't be read", async () => {
+    // A part that fails to read leaves nothing to match against. It is not a
+    // path nobody handles, and it must not fail the function either.
+    const { event, handler } = loadHandler({
+      ...request("/anything"),
+      routes: [],
+      metadata: {},
+      kvGet: async (key: string) => {
+        if (key === "router:routes") return JSON.stringify({ parts: 2 });
+        throw new Error("chunk unavailable");
+      },
+    });
+
+    const response = await handler(event);
+
+    expect(response.statusCode).toBeUndefined();
+    expect(response.uri).toBe("/anything");
+  });
+
   it("passes the request on when a matched route's metadata can't be read", async () => {
     // The route matches, so this is not a path nobody handles: the read failed,
     // and a retry may work, so it is not answered with a 404.
@@ -880,25 +925,41 @@ describe("minified function code", () => {
   // when the call comes after the declaration. Every request on the distribution
   // then fails with a 503. Node does not throw, so only a check on the code
   // catches it. Share state through a return value, as `matchRoute` does with
-  // `{ unreadable: true }`, and declare variables inside a function. The one
+  // `{ unreadable: true }`, and declare variables inside a function. The
   // statement that starts the lookup, `const routes = ..., route = ...`, is set
-  // before anything reads it and no function uses it; the check reads the first
-  // name of each declaration, so it lists `routes`. Add a name here only if it
-  // is still true that no function reads it.
+  // before anything reads it and no function uses it. The check lists every name
+  // a top-level declaration introduces, however the minifier groups them. Add a
+  // name here only if it is still true that no function reads it.
   it("routerLookupCode declares only the variables it is known to be safe with", () => {
     const code = routerLookupCode("router");
-    let depth = 0;
     const declared: string[] = [];
+    let depth = 0; // braces, parentheses and brackets
     for (let i = 0; i < code.length; i++) {
       const c = code[i];
-      if (c === "{") depth++;
-      else if (c === "}") depth--;
-      else if (depth === 0 && !/[\w$]/.test(code[i - 1] ?? " ")) {
-        const m = /^(?:let|const|var)\s+([\w$]+)/.exec(code.slice(i, i + 40));
-        if (m) declared.push(m[1]);
+      if ("{([".includes(c)) depth++;
+      else if ("})]".includes(c)) depth--;
+      else if (depth === 0 && !/[\w$]/.test(code[i - 1] ?? " ") && /^(let|const|var)\s/.test(code.slice(i, i + 6))) {
+        // the names of this statement: the identifier after the keyword, and the one
+        // after every comma at this depth, up to the end of the statement
+        let j = i + code.slice(i).search(/\s/) + 1;
+        let d = 0;
+        let start = j;
+        const take = (from: number) => {
+          const m = /^[\w$]+/.exec(code.slice(from).trimStart());
+          if (m) declared.push(m[0]);
+        };
+        take(start);
+        for (; j < code.length; j++) {
+          const k = code[j];
+          if ("{([".includes(k)) d++;
+          else if ("})]".includes(k)) d--;
+          else if (d === 0 && k === ";") break;
+          else if (d === 0 && k === ",") take(j + 1);
+        }
+        i = j;
       }
     }
-    expect(declared).toEqual(["routes"]);
+    expect(declared).toEqual(["routes", "route"]);
   });
 
   // The function is limited to 10,240 bytes and the user's injection goes in the
