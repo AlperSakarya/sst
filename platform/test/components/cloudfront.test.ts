@@ -927,9 +927,11 @@ describe("minified function code", () => {
   // catches it. Share state through a return value, as `matchRoute` does with
   // `{ unreadable: true }`, and declare variables inside a function. The
   // statement that starts the lookup, `const routes = ..., route = ...`, is set
-  // before anything reads it and no function uses it. The check lists every name
-  // a top-level declaration introduces, however the minifier groups them. Add a
-  // name here only if it is still true that no function reads it.
+  // before anything reads it and no function uses it. The check lists the plain
+  // names a top-level `let`, `const` or `var` introduces, however the minifier
+  // groups them. It cannot read a destructuring declaration or a class, so it
+  // fails on those instead. Add a name here only if it is still true that no
+  // function reads it.
   it("routerLookupCode declares only the variables it is known to be safe with", () => {
     const code = routerLookupCode("router");
     const declared: string[] = [];
@@ -960,6 +962,9 @@ describe("minified function code", () => {
       }
     }
     expect(declared).toEqual(["routes", "route"]);
+    // forms the scanner above cannot read
+    expect(code).not.toMatch(/\b(let|const|var)\s*[{[]/);
+    expect(code).not.toMatch(/\bclass\b/);
   });
 
   // The function is limited to 10,240 bytes and the user's injection goes in the
