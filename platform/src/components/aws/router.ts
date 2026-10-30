@@ -2791,14 +2791,30 @@ export const routerLookupCode = (kvNamespace: string) => minifyBody`
         const routeNs = match.routeNs;
         const v = await cf.kvs().get(routeNs + ":metadata");
         return { type, routeNs, metadata: JSON.parse(v) };
-      } catch (e) {}
+      } catch (e) {
+        return { unreadable: true };
+      }
     }
   }
 
   // Look up the route
   const routes = await getRoutes();
   const route = await matchRoute(routes);
-  if (!route) return event.request;
+  if (!route || route.unreadable) {
+    // Routes are registered and none matches this request: a 404, as the docs
+    // say. When no routes are registered yet, or a matched route's metadata
+    // couldn't be read, the request is passed on as it was. The body is plain
+    // text, like CF_BLOCK_CLOUDFRONT_URL_INJECTION's 403, because this function
+    // shares 10KB with the user's injection.
+    if (!route && routes.length > 0) {
+      return {
+        statusCode: 404,
+        statusDescription: "Not Found",
+        body: { encoding: "text", data: "404 Not Found" },
+      };
+    }
+    return event.request;
+  }
   if (route.metadata.rewrite) {
     const rw = route.metadata.rewrite;
     event.request.uri = event.request.uri.replace(new RegExp(rw.regex), rw.to);

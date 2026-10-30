@@ -179,10 +179,12 @@ function loadHandler(input: {
   metadata: Record<string, any>;
   cookies?: Record<string, CloudFrontField>;
   querystring?: Record<string, unknown>;
+  // replaces the key-value store, for a test that needs a read to fail
+  kvGet?: (key: string) => Promise<string>;
 }) {
   const { context, event } = createContext({
     ...input,
-    kvGet: async (key: string) => {
+    kvGet: input.kvGet ?? (async (key: string) => {
       if (key === "router:routes") return JSON.stringify(input.routes);
       if (!key.endsWith(":metadata")) throw new Error("missing");
 
@@ -190,7 +192,7 @@ function loadHandler(input: {
       const metadata = input.metadata[routeNs];
       if (!metadata) throw new Error("missing");
       return JSON.stringify(metadata);
-    },
+    }),
     updateRequestOrigin(origin, currentEvent) {
       currentEvent.request.origin = origin;
     },
@@ -754,6 +756,105 @@ describe("CloudFront router", () => {
   });
 });
 
+describe("a request that matches no route", () => {
+  const request = (uri: string) => ({
+    uri,
+    headers: { host: { value: "example.com" } },
+  });
+
+  it("answers 404 when routes are registered and none matches", async () => {
+    const { event, handler } = loadHandler({
+      ...request("/robots.txt"),
+      routes: ["bucket,route0,,/files", "url,route1,,/api"],
+      metadata: {
+        route0: { domain: "bucket.s3.us-east-1.amazonaws.com", origin: {} },
+        route1: { host: "api.example.com", origin: {} },
+      },
+    });
+
+    const response = await handler(event);
+
+    expect(response.statusCode).toBe(404);
+    expect(response.statusDescription).toBe("Not Found");
+    expect(response.body.data).toBe("404 Not Found");
+  });
+
+  it("answers 404 when the only routes are for another host", async () => {
+    const { event, handler } = loadHandler({
+      ...request("/files/hello.txt"),
+      routes: ["bucket,route0,other\\.example\\.com,/files"],
+      metadata: {
+        route0: { domain: "bucket.s3.us-east-1.amazonaws.com", origin: {} },
+      },
+    });
+
+    const response = await handler(event);
+
+    expect(response.statusCode).toBe(404);
+  });
+
+  it("still routes a request that matches", async () => {
+    const { event, handler } = loadHandler({
+      ...request("/files/hello.txt"),
+      routes: ["bucket,route0,,/files"],
+      metadata: {
+        route0: { domain: "bucket.s3.us-east-1.amazonaws.com", origin: {} },
+      },
+    });
+
+    const response = await handler(event);
+
+    expect(response.statusCode).toBeUndefined();
+    expect(event.request.origin).toMatchObject({
+      domainName: "bucket.s3.us-east-1.amazonaws.com",
+    });
+  });
+
+  it("passes the request on when no routes are registered yet", async () => {
+    const { event, handler } = loadHandler({
+      ...request("/anything"),
+      routes: [],
+      metadata: {},
+    });
+
+    const response = await handler(event);
+
+    expect(response.statusCode).toBeUndefined();
+    expect(response.uri).toBe("/anything");
+  });
+
+  it("passes the request on when the routes can't be read", async () => {
+    const { event, handler } = loadHandler({
+      ...request("/anything"),
+      routes: [],
+      metadata: {},
+      kvGet: async () => {
+        throw new Error("key-value store unavailable");
+      },
+    });
+
+    const response = await handler(event);
+
+    expect(response.statusCode).toBeUndefined();
+    expect(response.uri).toBe("/anything");
+  });
+
+  it("passes the request on when a matched route's metadata can't be read", async () => {
+    // The route matches, so this is not a path nobody handles: the read failed,
+    // and a retry may work, so it is not answered with a 404.
+    const { event, handler } = loadHandler({
+      ...request("/files/hello.txt"),
+      routes: ["bucket,route0,,/files"],
+      metadata: {},
+    });
+
+    const response = await handler(event);
+
+    expect(response.statusCode).toBeUndefined();
+    expect(response.uri).toBe("/files/hello.txt");
+  });
+});
+
 describe("minified function code", () => {
   const pieces = {
     CF_BLOCK_CLOUDFRONT_URL_INJECTION,
@@ -771,6 +872,33 @@ describe("minified function code", () => {
   // Node accepts it, so only a check on the minified code catches it.
   it.each(Object.entries(pieces))("%s never awaits inside a call's arguments", (_, code) => {
     expect(code).not.toMatch(/[(,]\s*await\b/);
+  });
+
+  // The lookup's functions (`getRoutes`, `matchRoute`) are hoisted, and CloudFront
+  // throws "ReferenceError: cannot access variable before initialization" when
+  // one of them reads a `let` or `const` declared beside it in the handler, even
+  // when the call comes after the declaration. Every request on the distribution
+  // then fails with a 503. Node does not throw, so only a check on the code
+  // catches it. Share state through a return value, as `matchRoute` does with
+  // `{ unreadable: true }`, and declare variables inside a function. The one
+  // statement that starts the lookup, `const routes = ..., route = ...`, is set
+  // before anything reads it and no function uses it; the check reads the first
+  // name of each declaration, so it lists `routes`. Add a name here only if it
+  // is still true that no function reads it.
+  it("routerLookupCode declares only the variables it is known to be safe with", () => {
+    const code = routerLookupCode("router");
+    let depth = 0;
+    const declared: string[] = [];
+    for (let i = 0; i < code.length; i++) {
+      const c = code[i];
+      if (c === "{") depth++;
+      else if (c === "}") depth--;
+      else if (depth === 0 && !/[\w$]/.test(code[i - 1] ?? " ")) {
+        const m = /^(?:let|const|var)\s+([\w$]+)/.exec(code.slice(i, i + 40));
+        if (m) declared.push(m[1]);
+      }
+    }
+    expect(declared).toEqual(["routes"]);
   });
 
   // The function is limited to 10,240 bytes and the user's injection goes in the
