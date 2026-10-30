@@ -66,6 +66,39 @@ async function settle() {
   }
 }
 
+// Runs the code of a generated CloudFront function with a fake viewer-request event
+// and returns what the function returns: the request when it lets it through, or a
+// response when it answers at the edge.
+async function runFunction(code: string, uri: string) {
+  const event = {
+    request: {
+      method: "GET",
+      uri,
+      querystring: {},
+      headers: { host: { value: "router.example.com" } },
+      cookies: {},
+    },
+  };
+  const handler = new Function(`${code}\nreturn handler;`)() as (
+    event: unknown,
+  ) => Promise<any>;
+  return handler(event);
+}
+
+// The functions that answer with a response instead of passing the request on.
+async function functionsThatAnswer(uri = "/nothing/here") {
+  const answering: { name: string; response: any }[] = [];
+  for (const fn of findResources(TYPES.cfFunction)) {
+    const result = await runFunction(fn.inputs.code as string, uri).catch(
+      () => undefined,
+    );
+    if (result && typeof result.statusCode === "number") {
+      answering.push({ name: fn.name, response: result });
+    }
+  }
+  return answering;
+}
+
 describe("Router catch-all route", function () {
   let Router: typeof import("./../../src/components/aws/router").Router;
 
@@ -83,14 +116,14 @@ describe("Router catch-all route", function () {
     });
     await settle();
 
-    const code = findResources(TYPES.cfFunction)
-      .map((fn) => fn.inputs.code as string)
-      .join("\n");
-    expect(code).toContain("statusCode: 404");
-    // the page is HTML, so it says so
-    expect(code).toContain(
-      '"content-type": { value: "text/html; charset=utf-8" }',
+    const answering = await functionsThatAnswer("/nothing/here");
+    expect(answering).toHaveLength(1);
+    const { response } = answering[0];
+    expect(response.statusCode).toBe(404);
+    expect(response.headers["content-type"].value).toBe(
+      "text/html; charset=utf-8",
     );
+    expect(response.body.data).toContain("404 Not Found");
   });
 
   it("attaches the 404 function to the default cache behavior", async () => {
@@ -100,9 +133,7 @@ describe("Router catch-all route", function () {
     await settle();
 
     // The function whose code answers with the 404 ...
-    const notFound = findResources(TYPES.cfFunction).filter((fn) =>
-      (fn.inputs.code as string).includes("statusCode: 404"),
-    );
+    const notFound = await functionsThatAnswer("/nothing/here");
     expect(notFound).toHaveLength(1);
 
     // ... is the viewer-request function of the distribution's default behavior,
@@ -122,7 +153,7 @@ describe("Router catch-all route", function () {
     expect(String(viewerRequests[0].functionArn)).toContain(notFound[0].name);
   });
 
-  it("does not inject a 404 when a /* route is defined", async () => {
+  it("does not answer with a 404 when a /* route is defined", async () => {
     new Router("WithCatchAll", {
       routes: {
         "/api/*": "https://example.com",
@@ -131,9 +162,6 @@ describe("Router catch-all route", function () {
     });
     await settle();
 
-    const code = findResources(TYPES.cfFunction)
-      .map((fn) => fn.inputs.code as string)
-      .join("\n");
-    expect(code).not.toContain("statusCode: 404");
+    expect(await functionsThatAnswer("/nothing/here")).toHaveLength(0);
   });
 });
