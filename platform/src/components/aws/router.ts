@@ -2459,8 +2459,8 @@ async function handler(event) {
    * Control. It is off by default. CloudFront also needs permission to invoke the
    * function, as described under `protection`.
    *
-   * A request that matches none of the Router's routes gets a 404, unless you add a
-   * `/*` route to catch it.
+   * A request that matches none of the Router's routes gets a 404. To catch it
+   * instead, add a route for `/`.
    *
    * @param pattern The path prefix to match for this route.
    * @param url The destination URL to route matching requests to.
@@ -2537,8 +2537,8 @@ async function handler(event) {
   /**
    * Add a route to an S3 bucket.
    *
-   * A request that matches none of the Router's routes gets a 404, unless you add a
-   * `/*` route to catch it.
+   * A request that matches none of the Router's routes gets a 404. To catch it
+   * instead, add a route for `/`.
    *
    * @param pattern The path prefix to match for this route.
    * @param bucket The S3 bucket to route matching requests to.
