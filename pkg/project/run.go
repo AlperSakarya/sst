@@ -721,11 +721,12 @@ loop:
 	complete.Finished = finished
 	complete.Errors = errors
 	complete.ImportDiffs = importDiffs
-	// A full remove leaves no stage, so its links are empty and regenerating
-	// would blank out the types the developer still needs to work against. A
-	// remove with a --target leaves the rest of the stage, so its types are
-	// regenerated from what remains.
-	if generatesTypes(input) {
+	// A remove that leaves no links, which is a remove of the whole stage or of
+	// its last component, would rewrite the types empty, and blank out the types
+	// the developer still needs to work against. A remove that leaves some of the
+	// stage, a --target or a remove that failed partway, regenerates them from
+	// what remains.
+	if generatesTypes(input, complete) {
 		types.Generate(p.PathConfig(), complete.Links, p.App().Types.Ignore)
 	}
 	defer bus.Publish(complete)
@@ -848,8 +849,8 @@ func (p *Project) removeAppSync() {
 }
 
 // generatesTypes says whether a stack command regenerates the type files. Every
-// command does, except a remove of the whole stage: it leaves no links, so the
-// files would be rewritten empty.
-func generatesTypes(input *StackInput) bool {
-	return input.Command != "remove" || len(input.Target) > 0
+// command does, except a remove that left no links in the stage: the files would
+// be rewritten empty, and the developer still needs the types they had.
+func generatesTypes(input *StackInput, complete *CompleteEvent) bool {
+	return !(input.Command == "remove" && len(complete.Links) == 0)
 }
