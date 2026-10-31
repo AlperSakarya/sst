@@ -2744,6 +2744,7 @@ if (event.request.headers.host.value.includes('cloudfront.net')) {
 // Minified when the function is built, because the router's key-value
 // namespace is part of it.
 // NOTE: This string is size-sensitive — CloudFront Functions have a 10KB limit.
+// The minifier keeps local names as written, so keep them short.
 export const routerLookupCode = (kvNamespace: string) => minifyBody`
   async function getRoutes() {
     const routerNS = "${kvNamespace}";
@@ -2754,11 +2755,11 @@ export const routerLookupCode = (kvNamespace: string) => minifyBody`
 
       // handle chunked routes
       if (routes.parts) {
-        const chunkPromises = [];
+        const reads = [];
         for (let i = 0; i < routes.parts; i++) {
-          chunkPromises.push(cf.kvs().get(routerNS + ":routes:" + i));
+          reads.push(cf.kvs().get(routerNS + ":routes:" + i));
         }
-        const chunks = await Promise.all(chunkPromises);
+        const chunks = await Promise.all(reads);
         routes = JSON.parse(chunks.join(""));
       }
     } catch (e) {}
@@ -2767,8 +2768,8 @@ export const routerLookupCode = (kvNamespace: string) => minifyBody`
 
   async function matchRoute(routes) {
     const requestHost = event.request.headers.host.value;
-    const requestHostWithEscapedDots = requestHost.replace(/\\./g, "\\\\.");
-    const requestHostRegexPattern = "^" + requestHost + "$";
+    const escapedHost = requestHost.replace(/\\./g, "\\\\.");
+    const hostPattern = "^" + requestHost + "$";
     let match;
     routes.forEach(r => {
       ${
@@ -2793,8 +2794,8 @@ export const routerLookupCode = (kvNamespace: string) => minifyBody`
       )) return;
 
       const hostMatches = host === ""
-        || host === requestHostWithEscapedDots
-        || (host.includes("*") && new RegExp(host).test(requestHostRegexPattern));
+        || host === escapedHost
+        || (host.includes("*") && new RegExp(host).test(hostPattern));
       if (!hostMatches) return;
 
       const pathMatches = event.request.uri.startsWith(path) && (event.request.uri === path || path.endsWith('/') || event.request.uri[path.length] === '/' || path === '/');
